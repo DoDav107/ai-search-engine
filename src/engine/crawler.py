@@ -130,6 +130,9 @@ def crawl(config: dict[str, Any]) -> list[CrawledPage]:
             response = session.get(url, timeout=timeout_seconds)
             status_code = response.status_code
             if response.ok:
+                # requests defaults to ISO-8859-1 when no charset header is present;
+                # apparent_encoding (chardet) detects the actual encoding from the bytes.
+                response.encoding = response.apparent_encoding
                 html = response.text
                 filename = _filesystem_safe_filename(url)
                 cache_path = raw_dir / filename

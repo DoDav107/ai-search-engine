@@ -81,26 +81,66 @@ def canonical(html: Any) -> FactorResult:
 
 
 def image_alt(html: Any) -> FactorResult:
-    """Extract the image alt text coverage factor from parsed HTML."""
-    images = html.find_all("img")
-    total = len(images)
-    if total == 0:
-        status = "pass"
-        message = "No images present on this page, so image alt coverage is not applicable."
-        return FactorResult(id="image_alt", status=status, value="0 of 0 images have alt text", message=message)
+    """Extract image alt text coverage, distinguishing described, decorative, and missing images.
 
-    with_alt = sum(1 for img in images if img.get("alt") and img.get("alt").strip())
-    ratio = int(with_alt / total * 100)
-    value = f"{with_alt} of {total} images have alt text"
-    if ratio >= 90:
+    Three classifications:
+    - described:  alt attribute present and non-empty — the content image is correctly annotated.
+    - decorative: alt attribute present but empty/whitespace (alt="") — intentional and correct;
+                  excluded from scoring (Google Lighthouse treats this as valid).
+    - missing:    no alt attribute at all — the genuine problem.
+
+    Coverage = described / (described + missing). Decorative images are excluded entirely.
+    pass >= 90 %, warn 50–89 %, fail < 50 %. If there are no content images (all decorative or
+    no images at all) the result is pass with an explanatory note.
+    """
+    images = html.find_all("img")
+
+    described = 0
+    decorative = 0
+    missing = 0
+    for img in images:
+        if "alt" not in img.attrs:
+            missing += 1
+        elif img["alt"].strip():
+            described += 1
+        else:
+            decorative += 1
+
+    relevant = described + missing  # decorative excluded
+
+    value = {"described": described, "missing": missing, "decorative": decorative}
+
+    if relevant == 0:
+        note = "no images" if (described + missing + decorative) == 0 else "all images are decorative"
+        return FactorResult(
+            id="image_alt",
+            status="pass",
+            value=value,
+            message=f"No content images require alt text ({note}).",
+        )
+
+    coverage = described / relevant
+
+    # Build a consistent, readable message breakdown.
+    missing_clause = f"{missing} missing the alt attribute"
+    decorative_clause = (
+        f" ({decorative} decorative image{'s' if decorative != 1 else ''} correctly use{'s' if decorative == 1 else ''} empty alt)"
+        if decorative
+        else ""
+    )
+    message = (
+        f"{described} of {relevant} content image{'s' if relevant != 1 else ''} "
+        f"{'have' if relevant != 1 else 'has'} descriptive alt text; "
+        f"{missing_clause}{decorative_clause}."
+    )
+
+    if coverage >= 0.9:
         status = "pass"
-        message = "Most images include alt text, which is good for accessibility and SEO."
-    elif ratio >= 50:
+    elif coverage >= 0.5:
         status = "warn"
-        message = f"Only {ratio}% of images have alt text; add descriptive alt text for more images."
     else:
         status = "fail"
-        message = f"Only {ratio}% of images have alt text; improve ALT coverage for SEO and accessibility."
+
     return FactorResult(id="image_alt", status=status, value=value, message=message)
 
 

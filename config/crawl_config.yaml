@@ -1,5 +1,5 @@
 site:
-  name: "Eloize / RemindX"
+  name: "Eloize"
   base_url: "https://www.eloize.io"
   seed_urls: ["/"]
 

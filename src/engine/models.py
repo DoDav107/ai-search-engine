@@ -62,6 +62,7 @@ class CombinedReport:
     unified_score: float
     seo_report: SiteReport
     geo_report: GeoReport
+    recommendations: List["DraftedFix"] = field(default_factory=list)
 
 
 @dataclass

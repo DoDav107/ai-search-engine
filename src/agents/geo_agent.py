@@ -106,12 +106,19 @@ def run_geo(config: dict[str, Any]) -> GeoReport:
     engine_type = config.get("engine", "mock")
     queries = config.get("queries", [])
     competitors = config.get("competitors", [])
-    client = get_engine_client(config)
+
+    openai_mode = config.get("openai", {}).get("mode", "mock")
+    if openai_mode == "live":
+        from src.clients.openai_client import client as openai_client
+        _get_answer = lambda q: openai_client.chat(q)
+    else:
+        mock_client = get_engine_client(config)
+        _get_answer = lambda q: mock_client.query(q)
 
     results: list[GeoQueryResult] = []
     for query in queries:
         try:
-            answer = client.query(query)
+            answer = _get_answer(query)
             result = GeoQueryResult(query=query, engine=engine_type, answer=answer, error=None)
         except Exception as exc:
             result = GeoQueryResult(query=query, engine=engine_type, answer="", error=str(exc))

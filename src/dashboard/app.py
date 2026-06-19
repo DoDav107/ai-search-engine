@@ -28,11 +28,8 @@ if str(REPO_ROOT) not in sys.path:
 st.set_page_config(page_title="Eloize SEO/GEO Dashboard", layout="wide")
 
 # ---------------------------------------------------------------------------
-# Project imports — after sys.path is set
-# ---------------------------------------------------------------------------
-from src.engine.models import Recommendation  # noqa: E402
-from src.agents.drafting_agent import draft_fixes  # noqa: E402
-
+# This dashboard is strictly read-only: it renders the report produced by
+# `python -m src.pipeline` and never runs drafting or makes live API calls.
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -47,12 +44,6 @@ _SEVERITY_COLOR: dict[str, str] = {"fail": "red", "warn": "orange"}
 # ---------------------------------------------------------------------------
 # Cached helpers
 # ---------------------------------------------------------------------------
-
-def _latest(pattern: str) -> Path | None:
-    """Return the newest file matching pattern in REPORTS_DIR, or None."""
-    files = list(REPORTS_DIR.glob(pattern))
-    return max(files, key=lambda p: p.stat().st_mtime) if files else None
-
 
 def _fix_mojibake(text: str) -> str:
     """Fix text where UTF-8 bytes were decoded as Latin-1 (e.g. â€" → —).
@@ -93,38 +84,6 @@ def _load_json(path_str: str, _mtime: float) -> Any:
         return json.load(fh)
 
 
-@st.cache_data
-def _draft_fixes_cached(path_str: str, _mtime: float) -> list[dict]:
-    """Load recommendations and generate draft fixes via MockEngineClient (no API calls)."""
-    with open(path_str, encoding="utf-8") as fh:
-        recs_data = json.load(fh)
-
-    recommendations = [
-        Recommendation(
-            factor=r["factor"],
-            severity=r["severity"],
-            message=r["message"],
-            affected_urls=r["affected_urls"],
-            scope=r["scope"],
-            priority=r["priority"],
-        )
-        for r in recs_data
-    ]
-    fixes = draft_fixes(recommendations, {"engine": "mock"})
-    return [
-        {
-            "factor": df.recommendation.factor,
-            "severity": df.recommendation.severity,
-            "message": df.recommendation.message,
-            "affected_urls": df.recommendation.affected_urls,
-            "scope": df.recommendation.scope,
-            "draft": df.draft,
-            "status": df.status,
-        }
-        for df in fixes
-    ]
-
-
 def _render_draft(draft: str) -> None:
     """Render JSON-LD with st.code; everything else (lists, plain text) with st.markdown."""
     if draft.strip().startswith("{"):
@@ -145,29 +104,22 @@ with st.sidebar:
 
 
 # ---------------------------------------------------------------------------
-# Report discovery
+# Report discovery — single source of truth produced by the pipeline
 # ---------------------------------------------------------------------------
-combined_path = _latest("combined_report_*.json")
-recs_path = _latest("recommendations_*.json")
+report_path = REPORTS_DIR / "latest_report.json"
 
-if combined_path is None and recs_path is None:
-    st.warning(
-        "No reports found in `data/reports/`. Generate them by running:\n\n"
-        "```\npython -m src.pipeline\npython -m src.engine.recommendations\n```"
-    )
+if not report_path.exists():
+    st.info("No report yet — run `python -m src.pipeline` to generate one.")
     st.stop()
 
-combined: dict | None = (
-    _load_json(str(combined_path), combined_path.stat().st_mtime) if combined_path else None
-)
+combined: dict = _load_json(str(report_path), report_path.stat().st_mtime)
 
 
 # ---------------------------------------------------------------------------
 # Page title and report freshness caption
 # ---------------------------------------------------------------------------
 st.title("Eloize — SEO & GEO Audit")
-if combined_path:
-    st.caption(_report_caption(combined_path))
+st.caption(_report_caption(report_path))
 
 
 # ---------------------------------------------------------------------------
@@ -291,16 +243,18 @@ else:
 # ---------------------------------------------------------------------------
 st.header("Recommendations")
 
-if recs_path:
-    drafted = _draft_fixes_cached(str(recs_path), recs_path.stat().st_mtime)
-    for item in drafted:
-        sev = item["severity"]
-        with st.expander(f"{item['factor']} — {sev}"):
+recommendations = combined.get("recommendations", [])
+if recommendations:
+    for item in recommendations:
+        rec = item.get("recommendation", {})
+        sev = rec.get("severity", "")
+        with st.expander(f"{rec.get('factor', '')} — {sev}"):
             st.badge(sev.upper(), color=_SEVERITY_COLOR.get(sev, "gray"))
-            st.badge("Pending review", color="orange")
-            st.markdown(f"**Scope:** {item['scope']} — {len(item['affected_urls'])} page(s)")
-            st.markdown(f"**Issue:** {item['message']}")
+            status = item.get("status", "pending_review")
+            st.badge(status.replace("_", " ").title(), color="orange")
+            st.markdown(f"**Scope:** {rec.get('scope', '')} — {len(rec.get('affected_urls', []))} page(s)")
+            st.markdown(f"**Issue:** {rec.get('message', '')}")
             st.markdown("**Draft fix:**")
-            _render_draft(item["draft"])
+            _render_draft(item.get("draft", ""))
 else:
-    st.info("No recommendations found — run `python -m src.engine.recommendations`.")
+    st.info("No recommendations in the report — run `python -m src.pipeline`.")

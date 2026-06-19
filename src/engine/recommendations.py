@@ -80,7 +80,7 @@ def build_recommendations(site_report: SiteReport, weights: dict[str, float]) ->
 def _save_recommendations(recommendations: list[Recommendation]) -> Path:
     report_dir = Path("data/reports")
     report_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now(timezone.UTC).strftime("%Y%m%dT%H%M%SZ")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     report_path = report_dir / f"recommendations_{timestamp}.json"
     with report_path.open("w", encoding="utf-8") as stream:
         json.dump([asdict(rec) for rec in recommendations], stream, indent=2)

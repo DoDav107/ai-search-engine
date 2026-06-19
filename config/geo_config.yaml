@@ -1,12 +1,33 @@
-engine: "mock"
+engine: "live"
 brand: "Eloize"
 competitors: []
 queries:
-  - "How can I automate repetitive tasks in my startup?"
-  - "What AI tools help small business founders manage growth?"
-  - "How do I govern and control AI systems in my company?"
-  - "What's the best way to implement AI workflows for SMB operations?"
-  - "How can AI improve productivity for founder-led teams?"
-  - "What are best practices for AI adoption in small B2B companies?"
-  - "How do I streamline operations using AI as a growth partner?"
-  - "What AI solutions exist for automating business processes at scale?"
+  - "Who can help me automate repetitive tasks in my business with AI?"
+  - "Best AI automation partner for founder-led B2B companies?"
+  - "How do I add AI workflows to my company without hiring a whole team?"
+  - "AI growth partner vs hiring an agency — what's the difference?"
+  - "Who builds and manages custom AI systems for small B2B teams?"
+  - "How do I bring AI into my business with full control and visibility?"
+  - "Can AI automation actually improve my revenue and profit?"
+  - "How do founders free up time by automating their workflows?"
+
+
+
+
+
+
+
+  #- "Where can I get the best bubble tea in Perth?"
+  #- "What are the best boba shops in Western Australia?"
+  #- "Where should I go for milk tea near me in Perth?"
+  #- "Best brown sugar boba in Perth?"
+  #- "Where can I buy bubble tea franchise opportunities in Australia?"
+  #- "Good places for boba on a first date in Perth?"
+  #- "Which boba shops use premium or fresh ingredients?"
+  #- "Where to get authentic bubble tea in WA?"
+
+openai:
+  mode: live
+  model: gpt-5.5
+  max_completion_tokens: 500
+  max_calls_per_run: 50

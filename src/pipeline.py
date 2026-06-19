@@ -11,7 +11,9 @@ from typing import Any
 import yaml
 
 from src.agents.geo_agent import load_geo_config, run_geo
+from src.agents.drafting_agent import draft_fixes, extract_page_content
 from src.engine.models import CombinedReport, GeoReport, SiteReport
+from src.engine.recommendations import build_recommendations, _load_recommendation_weights
 from src.engine import scoring
 
 
@@ -33,13 +35,23 @@ def _normalize_weights(weights: dict[str, float]) -> tuple[float, float]:
 
 
 def _save_combined_report(combined_report: CombinedReport) -> Path:
+    """Save the report as latest_report.json (overwritten) plus a timestamped copy.
+
+    asdict() recurses through the nested dataclasses (SiteReport, GeoReport, and the
+    DraftedFix recommendations), so the whole payload is JSON-serializable.
+    """
     report_dir = Path("data/reports")
     report_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    report_path = report_dir / f"combined_report_{timestamp}.json"
-    with report_path.open("w", encoding="utf-8") as stream:
-        json.dump(asdict(combined_report), stream, indent=2)
-    return report_path
+    payload = asdict(combined_report)
+
+    latest_path = report_dir / "latest_report.json"
+    with latest_path.open("w", encoding="utf-8") as stream:
+        json.dump(payload, stream, indent=2)
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    with (report_dir / f"report_{timestamp}.json").open("w", encoding="utf-8") as stream:
+        json.dump(payload, stream, indent=2)
+    return latest_path
 
 
 def run_pipeline() -> CombinedReport:
@@ -49,6 +61,8 @@ def run_pipeline() -> CombinedReport:
     weights = scoring.load_weights()
 
     pages = scoring.crawl(seo_config)
+    # Keep each page's crawled content so draft fixes can be grounded in it.
+    page_content = {page.url: extract_page_content(page.html) for page in pages}
     reports = [scoring.extract_page(page, seo_config) for page in pages]
     for report in reports:
         scoring.score_page(report, weights)
@@ -60,6 +74,15 @@ def run_pipeline() -> CombinedReport:
     geo_config = load_geo_config()
     geo_report = run_geo(geo_config)
 
+    # Recommendations with live, grounded draft fixes — the pipeline is the single
+    # source of truth; the dashboard only reads the saved report.
+    recommendations = build_recommendations(seo_report, _load_recommendation_weights())
+    draft_config = {
+        "engine": geo_config.get("engine", "mock"),
+        "openai": geo_config.get("openai", {}),
+    }
+    drafted = draft_fixes(recommendations, draft_config, page_content=page_content)
+
     seo_weight, geo_weight = _normalize_weights(pipeline_config)
     unified_score = round(seo_weight * seo_score + geo_weight * geo_report.geo_score, 1)
 
@@ -70,6 +93,7 @@ def run_pipeline() -> CombinedReport:
         unified_score=unified_score,
         seo_report=seo_report,
         geo_report=geo_report,
+        recommendations=drafted,
     )
     _save_combined_report(combined_report)
     return combined_report

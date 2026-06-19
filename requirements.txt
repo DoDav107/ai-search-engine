@@ -3,3 +3,5 @@ beautifulsoup4
 lxml
 pyyaml
 streamlit
+openai
+python-dotenv

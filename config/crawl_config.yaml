@@ -1,13 +1,13 @@
 site:
-  name: "Eloize"
-  base_url: "https://www.eloize.io"
+  name: "Bobobaba"
+  base_url: "https://www.nike.com"
   seed_urls: ["/"]
 
 crawl:
   max_pages: 15
   max_depth: 1
   delay_seconds: 1.0
-  user_agent: "EloizeSEOBot/0.1"
+  user_agent: "BobobabaSEOBot/0.1"
   respect_robots_txt: true
   timeout_seconds: 10
 

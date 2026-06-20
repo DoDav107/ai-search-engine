@@ -93,6 +93,7 @@ def run_pipeline() -> CombinedReport:
         unified_score=unified_score,
         seo_report=seo_report,
         geo_report=geo_report,
+        brand=geo_config.get("brand", ""),
         recommendations=drafted,
     )
     _save_combined_report(combined_report)

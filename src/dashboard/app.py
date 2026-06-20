@@ -93,17 +93,6 @@ def _render_draft(draft: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Sidebar
-# ---------------------------------------------------------------------------
-with st.sidebar:
-    st.title("Eloize Dashboard")
-    if st.button("Refresh", width="stretch"):
-        st.cache_data.clear()
-        st.rerun()
-    st.caption("Reads `data/reports/` — run `python -m src.pipeline` to update.")
-
-
-# ---------------------------------------------------------------------------
 # Report discovery — single source of truth produced by the pipeline
 # ---------------------------------------------------------------------------
 report_path = REPORTS_DIR / "latest_report.json"
@@ -114,11 +103,25 @@ if not report_path.exists():
 
 combined: dict = _load_json(str(report_path), report_path.stat().st_mtime)
 
+# Brand drives the dashboard titles so the tool is site-agnostic.
+brand = (combined.get("brand") or "").strip()
+
+
+# ---------------------------------------------------------------------------
+# Sidebar
+# ---------------------------------------------------------------------------
+with st.sidebar:
+    st.title(f"{brand} Dashboard" if brand else "Dashboard")
+    if st.button("Refresh", width="stretch"):
+        st.cache_data.clear()
+        st.rerun()
+    st.caption("Reads `data/reports/` — run `python -m src.pipeline` to update.")
+
 
 # ---------------------------------------------------------------------------
 # Page title and report freshness caption
 # ---------------------------------------------------------------------------
-st.title("Eloize — SEO & GEO Audit")
+st.title(f"{brand} — SEO & GEO Audit" if brand else "SEO & GEO Audit")
 st.caption(_report_caption(report_path))
 
 

@@ -22,6 +22,90 @@ _LEVERS = [
     "Brand consistency across the web",
 ]
 
+# Per-lever draft templates used when the model returns no usable draft. These contain
+# only structure + [bracketed placeholders] and {brand} — never fabricated specifics —
+# so a missing draft degrades to a safe, clearly-structured template the client fills in.
+_GEO_FALLBACK_DRAFTS: list[str] = [
+    (  # Lever 1 — on-site content / FAQ
+        "FAQ block to add to a relevant page — answer each target query in plain, "
+        "self-contained language an AI engine can lift verbatim:\n\n"
+        '### [Paste a target query as the heading, e.g. "What are the best running shoe brands?"]\n'
+        "[1–2 factual sentences that name {brand} and state what it offers for this need. "
+        "Use only real details from your site — no invented claims.]\n\n"
+        "### [Next target query]\n"
+        "[Concise, directly-stated answer the model can quote.]"
+    ),
+    (  # Lever 2 — third-party authority
+        "On-page credibility passage (publish only real, verifiable sources — never fabricate coverage):\n\n"
+        "## Why {brand}\n"
+        "[1–2 factual sentences positioning {brand} for the target topics, grounded in your real offering.]\n\n"
+        "As featured in: [Publication name + link], [Publication name + link]"
+    ),
+    (  # Lever 3 — structured data
+        'JSON-LD — paste inside <script type="application/ld+json"> in the page <head>. '
+        "Fill each question/answer from your real on-page content:\n"
+        "{{\n"
+        '  "@context": "https://schema.org",\n'
+        '  "@type": "FAQPage",\n'
+        '  "mainEntity": [\n'
+        "    {{\n"
+        '      "@type": "Question",\n'
+        '      "name": "[target query]",\n'
+        '      "acceptedAnswer": {{ "@type": "Answer", "text": "[concise factual answer that names {brand}]" }}\n'
+        "    }}\n"
+        "  ]\n"
+        "}}"
+    ),
+    (  # Lever 4 — brand consistency
+        "Standard brand boilerplate — use identical wording on your site, profiles, and "
+        "directories so all sources agree:\n\n"
+        "{brand} — [one-line category / positioning].\n"
+        "[1–2 factual sentences describing what {brand} offers, grounded in your real content. "
+        "Keep this wording identical everywhere.]"
+    ),
+]
+
+
+def _geo_fallback_draft(index: int, brand: str) -> str:
+    """Return the per-lever template draft, brand-filled. Clamps out-of-range indices."""
+    i = index if 0 <= index < len(_GEO_FALLBACK_DRAFTS) else 0
+    return _GEO_FALLBACK_DRAFTS[i].format(brand=brand or "the brand")
+
+
+def _site_content_digest(
+    page_content: dict[str, dict[str, Any]] | None,
+    max_pages: int = 8,
+    max_chars: int = 2600,
+) -> str:
+    """Condense crawled page content (titles, headings, text) into a grounding block.
+
+    This is the ONLY source of truth GEO drafts may use — same crawled content the SEO
+    drafts are grounded in. Capped so it fits the drafting token budget.
+    """
+    if not page_content:
+        return (
+            "(no crawled page content available — produce clearly-structured templates "
+            "with [placeholders]; do not invent specifics)"
+        )
+    blocks: list[str] = []
+    used = 0
+    for url, content in list(page_content.items())[:max_pages]:
+        title = (content.get("title") or "").strip()
+        headings = content.get("headings") or []
+        head_str = "; ".join(f"{tag.upper()}: {text}" for tag, text in headings[:6])
+        text = (content.get("text") or "").strip()[:300]
+        block = (
+            f"PAGE: {url}\n"
+            f"  Title: {title or '(none)'}\n"
+            f"  Headings: {head_str or '(none)'}\n"
+            f"  Text: {text or '(none)'}"
+        )
+        if used + len(block) > max_chars:
+            break
+        blocks.append(block)
+        used += len(block)
+    return "\n\n".join(blocks) if blocks else "(no usable crawled page content)"
+
 
 def _clamp_priority(value: Any) -> str:
     p = str(value or "").strip().capitalize()
@@ -37,8 +121,12 @@ def _visibility(report: GeoReport) -> tuple[int, int, float]:
     return mentioned, total, pct
 
 
-def _build_prompt(report: GeoReport, visibility: float) -> str:
-    """Build a JSON-returning prompt that feeds the real answers in for analysis."""
+def _build_prompt(report: GeoReport, visibility: float, content_digest: str) -> str:
+    """Build a JSON-returning prompt that feeds the real answers + crawled content in.
+
+    The AI answers ground the analysis (issue / why / recommendation); the crawled page
+    content grounds the publishable ``draft`` for each recommendation.
+    """
     brand = report.brand
     blocks: list[str] = []
     for i, r in enumerate(report.results, 1):
@@ -64,15 +152,25 @@ def _build_prompt(report: GeoReport, visibility: float) -> str:
         '  "assessment": 2-3 sentences on current AI visibility for the brand and what it means;\n'
         '  "recommendations": a list of exactly four objects, one per lever below, each with keys '
         '"title", "priority" (High|Medium|Low), "scope" (which queries it addresses), "issue" (grounded in '
-        'the real answers), "why_it_matters" (the effect on being surfaced in AI-generated answers), and '
-        '"recommendation" (concrete and actionable).\n'
+        'the real answers), "why_it_matters" (the effect on being surfaced in AI-generated answers), '
+        '"recommendation" (concrete and actionable), and '
+        '"draft": a ready-to-publish, self-contained on-page passage or FAQ answer the brand could add to '
+        "its site to improve being surfaced in AI answers for these queries. Write it in a plain, "
+        "directly-stated, liftable style (the way AI engines quote verbatim). For the structured-data "
+        "lever, the draft must be a JSON-LD block. Ground every draft ONLY in the REAL CRAWLED PAGE "
+        "CONTENT below; do NOT invent products, locations, prices, numbers, or facts about the brand. If "
+        "there is not enough real content to ground a specific claim, write a clearly-structured template "
+        "with [bracketed placeholders] instead of inventing specifics.\n"
         "The four levers (produce one recommendation each, in this order):\n"
         f"{levers}\n\n"
-        "Ground everything in the actual answers shown. Do NOT invent facts about the brand's products, "
-        "locations, pricing, or offerings. Return ONLY the JSON object.\n\n"
-        "--- REAL AI ANSWERS (the only source of truth) ---\n"
+        "Ground the analysis in the actual answers, and the drafts in the crawled page content. Return "
+        "ONLY the JSON object. Every draft is for human review before publishing — never auto-applied.\n\n"
+        "--- REAL AI ANSWERS (ground the analysis here) ---\n"
         f"{data_block}\n"
-        "--- END AI ANSWERS ---"
+        "--- END AI ANSWERS ---\n\n"
+        "--- REAL CRAWLED PAGE CONTENT (ground all drafts ONLY here) ---\n"
+        f"{content_digest}\n"
+        "--- END CRAWLED CONTENT ---"
     )
 
 
@@ -101,24 +199,28 @@ def _fallback_recs(brand: str, visibility: float) -> list[AdvisoryRecommendation
             issue=f"The AI answers to the target queries do not consistently surface {brand} ({visibility}% visibility).",
             why_it_matters="AI engines extract answers from clear, directly-stated on-page text. If your pages don't answer these queries in plain, self-contained language, the model has nothing to quote and omits the brand.",
             recommendation="Publish pages or FAQ sections that answer each target query directly: use the question as a heading followed by a concise, factual, self-contained answer the model can lift verbatim.",
+            draft=_geo_fallback_draft(0, brand),
         ),
         AdvisoryRecommendation(
             area="GEO", title=_LEVERS[1], priority=pr_primary, scope="All target queries",
             issue=f"Competitors are cited in the answers while {brand} lacks the third-party signals AI models rely on.",
             why_it_matters="AI models weight brands that are corroborated across independent, authoritative sources. Without reviews, listicles, and press, the model has low confidence in mentioning the brand.",
             recommendation="Earn placements in reputable third-party roundups, review sites, and industry press for the target topics so models encounter the brand from trusted sources.",
+            draft=_geo_fallback_draft(1, brand),
         ),
         AdvisoryRecommendation(
             area="GEO", title=_LEVERS[2], priority="Medium", scope="All target queries",
             issue="Entity information is not expressed in machine-readable structured data.",
             why_it_matters="Schema.org markup makes the brand an unambiguous entity, improving how engines associate it with the relevant topics and queries.",
             recommendation="Add Organization/Product/FAQPage JSON-LD that clearly states the entity name, category, and relationships, consistent with the on-page content.",
+            draft=_geo_fallback_draft(2, brand),
         ),
         AdvisoryRecommendation(
             area="GEO", title=_LEVERS[3], priority="Low" if not high else "Medium", scope="All target queries",
             issue="Brand naming and descriptions may be inconsistent across the web, weakening entity recognition.",
             why_it_matters="Consistent name, description, and category across sources reinforce a single, confident entity the model is more likely to surface.",
             recommendation="Standardise the brand name, one-line description, and category across the site, profiles, and directories so all sources agree.",
+            draft=_geo_fallback_draft(3, brand),
         ),
     ]
 
@@ -127,7 +229,7 @@ def _coerce(raw: Any, brand: str, visibility: float) -> list[AdvisoryRecommendat
     """Convert model recommendation objects into AdvisoryRecommendations; fall back if unusable."""
     recs: list[AdvisoryRecommendation] = []
     if isinstance(raw, list):
-        for item in raw:
+        for i, item in enumerate(raw):
             if not isinstance(item, dict):
                 continue
             title = str(item.get("title") or "").strip()
@@ -136,6 +238,9 @@ def _coerce(raw: Any, brand: str, visibility: float) -> list[AdvisoryRecommendat
             fix = str(item.get("recommendation") or "").strip()
             if not (title and issue and fix):
                 continue
+            # Use the model's grounded draft; fall back to the per-lever template (by
+            # position) so every GEO rec carries a non-empty, non-fabricated draft.
+            draft = str(item.get("draft") or "").strip() or _geo_fallback_draft(i, brand)
             recs.append(
                 AdvisoryRecommendation(
                     area="GEO",
@@ -145,18 +250,26 @@ def _coerce(raw: Any, brand: str, visibility: float) -> list[AdvisoryRecommendat
                     issue=issue,
                     why_it_matters=why or "Strengthens how AI engines surface the brand for these queries.",
                     recommendation=fix,
-                    draft="",
+                    draft=draft,
                 )
             )
     return recs if recs else _fallback_recs(brand, visibility)
 
 
 def build_geo_recommendations(
-    report: GeoReport, config: dict[str, Any]
+    report: GeoReport,
+    config: dict[str, Any],
+    page_content: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[str, list[AdvisoryRecommendation]]:
-    """Return (overall assessment, GEO recommendations) grounded in the real AI answers."""
+    """Return (overall assessment, GEO recommendations) grounded in the real AI answers.
+
+    ``page_content`` (URL -> extracted title/headings/text, the same crawled content used
+    for SEO drafts) grounds each recommendation's publishable ``draft``. When omitted, the
+    per-lever template drafts (placeholders only) are used.
+    """
     brand = report.brand
     mentioned, total, visibility = _visibility(report)
+    content_digest = _site_content_digest(page_content)
 
     engine = str(config.get("engine", "mock")).lower()
     mode = str(config.get("openai", {}).get("mode", "live")).lower()
@@ -164,10 +277,23 @@ def build_geo_recommendations(
     parsed: dict[str, Any] | None = None
     if mode == "live" and engine != "mock":
         from src.clients import openai_client as _oc
-        if _oc._MAX_TOKENS < 1200:
-            _oc._MAX_TOKENS = 1200
+        openai_cfg = config.get("openai", {})
+        # One large analytical call: assessment + four grounded drafts. It needs a big
+        # token budget (the full JSON runs ~2.5k tokens — the 500–2000 defaults truncate
+        # it into invalid JSON), low reasoning effort so a reasoning model doesn't burn
+        # the budget, and a longer timeout than the 30s default (it takes ~30-45s).
+        advisory_max_tokens = int(openai_cfg.get("advisory_max_completion_tokens", 3500))
+        reasoning_effort = openai_cfg.get("reasoning_effort") or None
+        advisory_timeout = float(openai_cfg.get("advisory_timeout", 120))
         try:
-            parsed = parse_json_object(_oc.client.chat(_build_prompt(report, visibility)))
+            parsed = parse_json_object(
+                _oc.client.chat(
+                    _build_prompt(report, visibility, content_digest),
+                    max_completion_tokens=advisory_max_tokens,
+                    reasoning_effort=reasoning_effort,
+                    timeout=advisory_timeout,
+                )
+            )
         except Exception:
             parsed = None
 

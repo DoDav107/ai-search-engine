@@ -57,6 +57,7 @@ class OpenAIClient:
         max_completion_tokens: int | None = None,
         reasoning_effort: str | None = None,
         model: str | None = None,
+        timeout: float | None = None,
     ) -> str:
         """Send a chat completion request and return the response text.
 
@@ -65,7 +66,9 @@ class OpenAIClient:
         passed through when supported; if the model/SDK rejects it, the call is retried
         once without it so callers don't have to care whether it's accepted. ``model``
         overrides the configured default model for this call (e.g. a cheaper model for
-        competitor extraction); the shared call cap / timeout / retry still apply.
+        competitor extraction). ``timeout`` overrides the default 30s request timeout for
+        this call (e.g. large analytical drafts on a reasoning model take longer); the
+        shared call cap / retry still apply.
 
         Raises RuntimeError if the per-run call cap is reached before the call is made,
         or if the API returns an auth or rate-limit error.
@@ -89,15 +92,17 @@ class OpenAIClient:
         if reasoning_effort:
             kwargs["reasoning_effort"] = reasoning_effort
 
+        api = self._client if timeout is None else self._client.with_options(timeout=timeout)
+
         try:
             self.call_count += 1
             try:
-                response = self._client.chat.completions.create(**kwargs)
+                response = api.chat.completions.create(**kwargs)
             except (TypeError, openai.BadRequestError):
                 # reasoning_effort may be unsupported by this model/SDK — retry without it.
                 if "reasoning_effort" in kwargs:
                     kwargs.pop("reasoning_effort")
-                    response = self._client.chat.completions.create(**kwargs)
+                    response = api.chat.completions.create(**kwargs)
                 else:
                     raise
             return response.choices[0].message.content or ""

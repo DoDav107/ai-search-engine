@@ -85,7 +85,9 @@ def run_pipeline() -> CombinedReport:
     seo_recommendations = build_seo_recommendations(
         recommendations, advisory_config, page_content=page_content
     )
-    geo_assessment, geo_recommendations = build_geo_recommendations(geo_report, advisory_config)
+    geo_assessment, geo_recommendations = build_geo_recommendations(
+        geo_report, advisory_config, page_content=page_content
+    )
 
     seo_weight, geo_weight = _normalize_weights(pipeline_config)
     unified_score = round(seo_weight * seo_score + geo_weight * geo_report.geo_score, 1)

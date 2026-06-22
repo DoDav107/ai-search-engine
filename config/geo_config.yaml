@@ -44,6 +44,11 @@ openai:
   measurement_max_completion_tokens: 2000
   reasoning_effort: "low"
   max_calls_per_run: 50
+  # The GEO advisory makes one large analytical call (assessment + four grounded
+  # drafts). It needs a big token budget (smaller budgets truncate the JSON) and
+  # takes longer than the 30s default request timeout, so allow more of both.
+  advisory_max_completion_tokens: 3500
+  advisory_timeout: 120
 
 # Auto-extraction of rival brands surfaced in each AI answer. Runs a SECOND, separate
 # call per query over the already-generated answer text (the measurement call is never

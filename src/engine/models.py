@@ -52,6 +52,9 @@ class GeoReport:
     engine: str
     results: List["GeoQueryResult"]
     geo_score: float = 0.0
+    # Ranked aggregate of rival brands surfaced across queries:
+    # [{"name": "Adidas", "query_count": 6}, ...] sorted by query_count desc.
+    competitors_summary: List[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -63,7 +66,9 @@ class CombinedReport:
     seo_report: SiteReport
     geo_report: GeoReport
     brand: str = ""
-    recommendations: List["DraftedFix"] = field(default_factory=list)
+    seo_recommendations: List["AdvisoryRecommendation"] = field(default_factory=list)
+    geo_recommendations: List["AdvisoryRecommendation"] = field(default_factory=list)
+    geo_assessment: str = ""
 
 
 @dataclass
@@ -82,3 +87,16 @@ class DraftedFix:
     recommendation: Recommendation
     draft: str
     status: str = "pending_review"
+
+
+@dataclass
+class AdvisoryRecommendation:
+    """A professional advisory recommendation for the SEO or GEO section."""
+    area: str            # "SEO" | "GEO"
+    title: str
+    priority: str        # "High" | "Medium" | "Low"
+    scope: str
+    issue: str
+    why_it_matters: str
+    recommendation: str
+    draft: str = ""      # SEO only — ready-to-apply content

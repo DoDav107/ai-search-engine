@@ -11,7 +11,8 @@ from typing import Any
 import yaml
 
 from src.agents.geo_agent import load_geo_config, run_geo
-from src.agents.drafting_agent import draft_fixes, extract_page_content
+from src.agents.geo_advisor import build_geo_recommendations
+from src.agents.drafting_agent import build_seo_recommendations, extract_page_content
 from src.engine.models import CombinedReport, GeoReport, SiteReport
 from src.engine.recommendations import build_recommendations, _load_recommendation_weights
 from src.engine import scoring
@@ -74,14 +75,17 @@ def run_pipeline() -> CombinedReport:
     geo_config = load_geo_config()
     geo_report = run_geo(geo_config)
 
-    # Recommendations with live, grounded draft fixes — the pipeline is the single
-    # source of truth; the dashboard only reads the saved report.
-    recommendations = build_recommendations(seo_report, _load_recommendation_weights())
-    draft_config = {
+    # Rich advisory recommendations — the pipeline is the single source of truth;
+    # the dashboard only reads the saved report.
+    advisory_config = {
         "engine": geo_config.get("engine", "mock"),
         "openai": geo_config.get("openai", {}),
     }
-    drafted = draft_fixes(recommendations, draft_config, page_content=page_content)
+    recommendations = build_recommendations(seo_report, _load_recommendation_weights())
+    seo_recommendations = build_seo_recommendations(
+        recommendations, advisory_config, page_content=page_content
+    )
+    geo_assessment, geo_recommendations = build_geo_recommendations(geo_report, advisory_config)
 
     seo_weight, geo_weight = _normalize_weights(pipeline_config)
     unified_score = round(seo_weight * seo_score + geo_weight * geo_report.geo_score, 1)
@@ -94,7 +98,9 @@ def run_pipeline() -> CombinedReport:
         seo_report=seo_report,
         geo_report=geo_report,
         brand=geo_config.get("brand", ""),
-        recommendations=drafted,
+        seo_recommendations=seo_recommendations,
+        geo_recommendations=geo_recommendations,
+        geo_assessment=geo_assessment,
     )
     _save_combined_report(combined_report)
     return combined_report

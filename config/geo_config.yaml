@@ -1,5 +1,13 @@
 engine: "live"
 brand: "Nike"
+# The subject brand plus its owned sub-brands/aliases. These are stripped from the
+# auto-extracted competitor list so the brand never appears as its own competitor.
+brand_aliases:
+  - "Nike"
+  - "Jordan"
+  - "Air Jordan"
+  - "Jordan Brand"
+  - "Converse"
 competitors: []
 queries:
   - "What are the best running shoe brands?"
@@ -30,4 +38,18 @@ openai:
   mode: live
   model: gpt-5.5
   max_completion_tokens: 500
+  # GEO measurement needs more headroom: the reasoning model can spend the budget
+  # reasoning and return empty content. Give measurement calls 2000 tokens and a low
+  # reasoning effort so reasoning doesn't eat the answer.
+  measurement_max_completion_tokens: 2000
+  reasoning_effort: "low"
   max_calls_per_run: 50
+
+# Auto-extraction of rival brands surfaced in each AI answer. Runs a SECOND, separate
+# call per query over the already-generated answer text (the measurement call is never
+# changed). Brands are grounded strictly in the answer text, then brand_aliases are
+# removed. Adds ~1 call per query, bounded by openai.max_calls_per_run.
+competitor_extraction:
+  enabled: true
+  model: gpt-4o-mini
+  max_completion_tokens: 300

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 import openai
 import yaml
@@ -49,8 +50,22 @@ class OpenAIClient:
         self._client = openai.OpenAI(api_key=_api_key, timeout=30, max_retries=2)
         self.call_count: int = 0
 
-    def chat(self, prompt: str, system: str | None = None) -> str:
+    def chat(
+        self,
+        prompt: str,
+        system: str | None = None,
+        max_completion_tokens: int | None = None,
+        reasoning_effort: str | None = None,
+        model: str | None = None,
+    ) -> str:
         """Send a chat completion request and return the response text.
+
+        ``max_completion_tokens`` overrides the configured default for this call (e.g. GEO
+        measurement needs more headroom). ``reasoning_effort`` (e.g. "minimal"/"low") is
+        passed through when supported; if the model/SDK rejects it, the call is retried
+        once without it so callers don't have to care whether it's accepted. ``model``
+        overrides the configured default model for this call (e.g. a cheaper model for
+        competitor extraction); the shared call cap / timeout / retry still apply.
 
         Raises RuntimeError if the per-run call cap is reached before the call is made,
         or if the API returns an auth or rate-limit error.
@@ -66,13 +81,25 @@ class OpenAIClient:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
 
+        kwargs: dict[str, Any] = {
+            "model": model or _MODEL,
+            "max_completion_tokens": max_completion_tokens if max_completion_tokens is not None else _MAX_TOKENS,
+            "messages": messages,
+        }
+        if reasoning_effort:
+            kwargs["reasoning_effort"] = reasoning_effort
+
         try:
             self.call_count += 1
-            response = self._client.chat.completions.create(
-                model=_MODEL,
-                max_completion_tokens=_MAX_TOKENS,
-                messages=messages,
-            )
+            try:
+                response = self._client.chat.completions.create(**kwargs)
+            except (TypeError, openai.BadRequestError):
+                # reasoning_effort may be unsupported by this model/SDK — retry without it.
+                if "reasoning_effort" in kwargs:
+                    kwargs.pop("reasoning_effort")
+                    response = self._client.chat.completions.create(**kwargs)
+                else:
+                    raise
             return response.choices[0].message.content or ""
         except openai.AuthenticationError as exc:
             raise RuntimeError(f"OpenAI authentication failed — check OPENAI_API_KEY: {exc}") from exc

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import re
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -10,6 +12,8 @@ from typing import Any
 import yaml
 
 from ..engine.models import GeoQueryResult, GeoReport
+
+logger = logging.getLogger(__name__)
 
 
 class EngineClient(ABC):
@@ -74,11 +78,125 @@ def detect_brand_mentions(result: GeoQueryResult, brand: str, competitors: list[
     return result
 
 
+_EXTRACTION_SYSTEM = "You are a precise information extractor. Respond with valid JSON only — no prose, no code fences."
+
+_EXTRACTION_PROMPT = (
+    "Extract every brand or company name that EXPLICITLY appears in the text below. "
+    "Ground your answer strictly in the text — do NOT add brands from your own knowledge "
+    "and do NOT infer brands that are not literally present. "
+    'Return ONLY a JSON array of strings, e.g. ["BrandA", "BrandB"]. '
+    "If no brands appear, return [].\n\n"
+    'TEXT:\n"""\n{answer}\n"""'
+)
+
+
+def _parse_brand_list(raw: str | None) -> list[str]:
+    """Parse the extractor response into a list of brand strings, defensively.
+
+    Handles code fences, surrounding prose, empty/non-JSON output. Returns [] on
+    anything that isn't a usable JSON array of strings.
+    """
+    if not raw:
+        return []
+    text = raw.strip()
+
+    # Strip ```json ... ``` (or plain ```) fences if present.
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z0-9]*\s*", "", text)
+        text = re.sub(r"\s*```$", "", text).strip()
+
+    data: Any
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        # Fall back to the first [...] block embedded in surrounding prose.
+        match = re.search(r"\[.*\]", text, re.DOTALL)
+        if not match:
+            return []
+        try:
+            data = json.loads(match.group(0))
+        except json.JSONDecodeError:
+            return []
+
+    if not isinstance(data, list):
+        return []
+    return [str(item).strip() for item in data if str(item).strip()]
+
+
+def _clean_competitors(names: list[str], aliases: list[str]) -> list[str]:
+    """Remove subject-brand aliases (case-insensitive) and dedupe, keeping first display form."""
+    alias_set = {a.strip().lower() for a in aliases if a and a.strip()}
+    seen: set[str] = set()
+    cleaned: list[str] = []
+    for name in names:
+        key = name.lower()
+        if not key or key in alias_set or key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(name)
+    return cleaned
+
+
+def extract_competitors(
+    answer: str,
+    openai_client: Any,
+    model: str,
+    aliases: list[str],
+    max_completion_tokens: int = 300,
+) -> list[str]:
+    """Run a separate, lightweight extraction pass to find rival brands in an answer.
+
+    Uses a cheap model via the shared client (so the call cap / timeout / retry apply).
+    Never raises: on cap/exhaustion or any API/parse error, logs and returns []. The
+    subject brand and its aliases are stripped, and the result is deduped case-insensitively.
+    """
+    if not (answer or "").strip():
+        return []
+    try:
+        raw = openai_client.chat(
+            _EXTRACTION_PROMPT.format(answer=answer),
+            system=_EXTRACTION_SYSTEM,
+            max_completion_tokens=max_completion_tokens,
+            model=model,
+        )
+    except Exception as exc:  # cap reached, auth, rate limit, network — never crash the run
+        logger.warning("Competitor extraction skipped (call failed): %s", exc)
+        return []
+    return _clean_competitors(_parse_brand_list(raw), aliases)
+
+
+def build_competitors_summary(results: list[GeoQueryResult]) -> list[dict]:
+    """Aggregate competitors across queries into a ranked [{name, query_count}] list.
+
+    Counts each competitor once per query (in how many queries it surfaced), deduped
+    case-insensitively, sorted by query_count desc then name for stable display.
+    """
+    counts: dict[str, list] = {}  # lower-key -> [display_name, query_count]
+    for result in results:
+        seen_in_query: set[str] = set()
+        for name in result.competitors_found:
+            key = name.lower()
+            if key in seen_in_query:
+                continue
+            seen_in_query.add(key)
+            if key not in counts:
+                counts[key] = [name, 0]
+            counts[key][1] += 1
+    summary = [{"name": display, "query_count": count} for display, count in counts.values()]
+    summary.sort(key=lambda item: (-item["query_count"], item["name"].lower()))
+    return summary
+
+
 def score_geo(report: GeoReport) -> float:
     """Compute a GEO score from brand mention prominence across queries."""
     query_values: list[float] = []
     for result in report.results:
-        if result.error or not result.brand_mentioned or not result.answer:
+        # Measurement errors (e.g. empty completions) are excluded entirely — they are
+        # not genuine "brand absent" results, so they must not drag the score down.
+        if result.error:
+            continue
+
+        if not result.brand_mentioned or not result.answer:
             query_values.append(0.0)
             continue
 
@@ -107,26 +225,75 @@ def run_geo(config: dict[str, Any]) -> GeoReport:
     queries = config.get("queries", [])
     competitors = config.get("competitors", [])
 
-    openai_mode = config.get("openai", {}).get("mode", "mock")
+    openai_cfg = config.get("openai", {})
+    openai_mode = openai_cfg.get("mode", "mock")
+    openai_client = None
     if openai_mode == "live":
         from src.clients.openai_client import client as openai_client
-        _get_answer = lambda q: openai_client.chat(q)
+        # Measurement needs more token headroom than the default so the reasoning model
+        # has room for both reasoning and the answer; low reasoning effort helps too.
+        measure_tokens = int(openai_cfg.get("measurement_max_completion_tokens", 2000))
+        reasoning_effort = openai_cfg.get("reasoning_effort") or None
+        _get_answer = lambda q: openai_client.chat(
+            q, max_completion_tokens=measure_tokens, reasoning_effort=reasoning_effort
+        )
     else:
         mock_client = get_engine_client(config)
         _get_answer = lambda q: mock_client.query(q)
+
+    # Competitor auto-extraction (a separate, cheap call per answer). Independent of the
+    # measurement call/model/prompt; never affects scoring, prominence, or visibility.
+    ce_cfg = config.get("competitor_extraction", {})
+    ce_enabled = bool(ce_cfg.get("enabled", True))
+    ce_model = str(ce_cfg.get("model", "gpt-4o-mini"))
+    ce_max_tokens = int(ce_cfg.get("max_completion_tokens", 300))
+    brand_aliases = config.get("brand_aliases") or [brand]
+    extraction_client = openai_client if openai_mode == "live" else None
+    if ce_enabled and extraction_client is None:
+        # Extraction needs the OpenAI client even when measurement runs in mock mode.
+        try:
+            from src.clients.openai_client import client as extraction_client
+        except Exception as exc:
+            logger.warning("Competitor extraction disabled (OpenAI client unavailable): %s", exc)
+            extraction_client = None
+    do_extract = ce_enabled and extraction_client is not None
+
+    def _is_empty(text: str | None) -> bool:
+        return not (text or "").strip()
 
     results: list[GeoQueryResult] = []
     for query in queries:
         try:
             answer = _get_answer(query)
-            result = GeoQueryResult(query=query, engine=engine_type, answer=answer, error=None)
+            if _is_empty(answer):
+                # Empty completion (reasoning consumed the budget) — retry once.
+                answer = _get_answer(query)
+            if _is_empty(answer):
+                # Still empty: a measurement failure, NOT a genuine "brand absent".
+                result = GeoQueryResult(
+                    query=query, engine=engine_type, answer="",
+                    error="empty completion — no answer returned after retry",
+                )
+            else:
+                result = GeoQueryResult(query=query, engine=engine_type, answer=answer, error=None)
         except Exception as exc:
             result = GeoQueryResult(query=query, engine=engine_type, answer="", error=str(exc))
 
+        # detect_brand_mentions early-returns on error, so error rows keep the default
+        # (unmeasured) state and are excluded from scoring/visibility below.
         detect_brand_mentions(result, brand, competitors)
+
+        # After measurement, populate competitors_found from the answer text itself.
+        # Only for genuinely measured answers; failures leave the default empty list.
+        if do_extract and not result.error and result.answer:
+            result.competitors_found = extract_competitors(
+                result.answer, extraction_client, ce_model, brand_aliases, ce_max_tokens
+            )
+
         results.append(result)
 
     report = GeoReport(brand=brand, engine=engine_type, results=results, geo_score=0.0)
+    report.competitors_summary = build_competitors_summary(results)
     score_geo(report)
     return report
 
@@ -167,8 +334,13 @@ def main() -> None:
                 print(f"  Competitors found: {', '.join(result.competitors_found)}")
         print()
 
-    visibility_score = round((mentioned_count / len(report.results)) * 100, 1) if report.results else 0.0
-    print(f"Brand visibility: {visibility_score}% of queries")
+    # Exclude measurement errors from the denominator — they aren't genuine misses.
+    measured = [r for r in report.results if not r.error]
+    errored = len(report.results) - len(measured)
+    visibility_score = round((mentioned_count / len(measured)) * 100, 1) if measured else 0.0
+    print(f"Brand visibility: {visibility_score}% of {len(measured)} measured queries")
+    if errored:
+        print(f"  ({errored} query(ies) excluded: no answer returned)")
     print(f"Overall GEO score: {report.geo_score}%")
 
 

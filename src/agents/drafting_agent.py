@@ -8,13 +8,14 @@ auto-applied.
 
 from __future__ import annotations
 
+import json
 import re
 from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urlparse
 
 from .geo_agent import EngineClient, MockEngineClient, get_engine_client
-from ..engine.models import DraftedFix, Recommendation
+from ..engine.models import AdvisoryRecommendation, DraftedFix, Recommendation
 
 
 # ---------------------------------------------------------------------------
@@ -306,6 +307,184 @@ def _fallback_for(factor: str) -> str:
     return _FALLBACK_DRAFT.get(
         factor, f"[No draft generated for factor '{factor}'. Review and address manually.]"
     )
+
+
+# ---------------------------------------------------------------------------
+# Advisory (rich) SEO recommendations
+# ---------------------------------------------------------------------------
+
+_FACTOR_LABEL: dict[str, str] = {
+    "title": "Page title",
+    "meta_description": "Meta description",
+    "h1": "H1 heading",
+    "canonical": "Canonical tag",
+    "image_alt": "Image ALT text",
+    "word_count": "Content depth",
+    "structured_data": "Structured data (JSON-LD)",
+}
+
+# Concrete SEO consequences per factor — used as grounded fallback for why_it_matters.
+_FACTOR_WHY: dict[str, str] = {
+    "title": (
+        "The <title> is the clickable headline in search results and a primary relevance signal. "
+        "A missing, duplicated, or badly-sized title weakens rankings and lowers SERP click-through rate."
+    ),
+    "meta_description": (
+        "The meta description is the snippet shown under the title in search results. Without a compelling "
+        "50–160 character summary, search engines auto-generate a weak snippet, reducing click-through rate."
+    ),
+    "h1": (
+        "The H1 tells users and search engines the page's main topic. A missing or duplicated H1 blurs "
+        "topical focus and hurts both accessibility and rankings."
+    ),
+    "canonical": (
+        "Canonical tags consolidate ranking signals onto one URL. Missing or incorrect canonicals cause "
+        "duplicate-content dilution and unpredictable indexing."
+    ),
+    "image_alt": (
+        "ALT text makes images understandable to screen readers and search engines. Missing ALT text fails "
+        "WCAG accessibility and forfeits image-search visibility and on-page relevance signals."
+    ),
+    "word_count": (
+        "Thin content gives search engines little to rank and rarely satisfies search intent, limiting the "
+        "page's visibility for its target terms."
+    ),
+    "structured_data": (
+        "Structured data (JSON-LD) helps engines understand the page's entities and can unlock rich results. "
+        "Without it the page misses enhanced SERP features and entity clarity."
+    ),
+}
+
+
+def _seo_priority(severity: str, n_pages: int) -> str:
+    """Priority from impact (severity) and reach (page count)."""
+    if severity == "fail":
+        return "High"
+    return "Medium" if n_pages > 1 else "Low"
+
+
+def _scope_str(urls: list[str]) -> str:
+    """Human-readable scope listing the affected pages."""
+    n = len(urls)
+    if n == 0:
+        return "No pages"
+    shown = ", ".join(urls[:3])
+    if n > 3:
+        shown += f", +{n - 3} more"
+    return f"{n} page{'s' if n != 1 else ''}: {shown}"
+
+
+def parse_json_object(text: str | None) -> dict[str, Any] | None:
+    """Best-effort parse of a JSON object from a model response (tolerates code fences)."""
+    if not text:
+        return None
+    s = text.strip()
+    if s.startswith("```"):
+        s = re.sub(r"^```[a-zA-Z]*\n?", "", s)
+        s = re.sub(r"\n?```$", "", s).strip()
+    try:
+        obj = json.loads(s)
+        return obj if isinstance(obj, dict) else None
+    except Exception:
+        start, end = s.find("{"), s.rfind("}")
+        if start != -1 and end > start:
+            try:
+                obj = json.loads(s[start : end + 1])
+                return obj if isinstance(obj, dict) else None
+            except Exception:
+                return None
+    return None
+
+
+def build_seo_advisory_prompt(rec: Recommendation, content: dict[str, Any] | None = None) -> str:
+    """Build a JSON-returning advisory prompt grounded in the page's real content."""
+    content = content or _empty_content()
+    title = content.get("title") or "(no title found on page)"
+    headings = content.get("headings") or []
+    headings_block = (
+        "\n".join(f"  - {tag.upper()}: {text}" for tag, text in headings)
+        if headings
+        else "  (none found)"
+    )
+    page_text = content.get("text") or "(no visible text extracted)"
+    pages = "\n".join(f"  - {url}" for url in rec.affected_urls)
+    task = _FACTOR_TASK.get(rec.factor, "Provide a concrete, copy-paste-ready fix for this SEO factor.")
+
+    return (
+        "You are a senior SEO consultant. Using ONLY the real page content below, return a single JSON "
+        "object (no markdown, no commentary) with exactly these keys:\n"
+        '  "issue": what is specifically wrong on this page for this factor, referencing the real content;\n'
+        '  "why_it_matters": the concrete SEO consequence (crawlability, SERP click-through, rankings, or '
+        "accessibility) — specific to this factor, not generic filler;\n"
+        '  "recommendation": the concrete, actionable fix;\n'
+        '  "draft": ready-to-apply content for this factor (title / meta description / H1 / ALT text / '
+        'JSON-LD), grounded only in the page content; use "" if not applicable.\n'
+        "Do NOT invent a brand, company, products, locations, or services that are not present in the "
+        "content. If a detail is not on the page, leave it out.\n\n"
+        f"Factor: {rec.factor}\n"
+        f"Severity: {rec.severity}\n"
+        f"Affected pages:\n{pages}\n\n"
+        "--- REAL PAGE CONTENT (the only source of truth) ---\n"
+        f"Page title: {title}\n"
+        f"Headings:\n{headings_block}\n"
+        f"Visible text (excerpt):\n{page_text}\n"
+        "--- END PAGE CONTENT ---\n\n"
+        f"Guidance for the draft: {task}\n"
+        "Return ONLY the JSON object."
+    )
+
+
+def build_seo_recommendations(
+    recommendations: list[Recommendation],
+    config: dict[str, Any],
+    page_content: dict[str, dict[str, Any]] | None = None,
+) -> list[AdvisoryRecommendation]:
+    """Produce one rich AdvisoryRecommendation per failing/warning factor, grounded in page content."""
+    page_content = page_content or {}
+
+    engine = str(config.get("engine", "mock")).lower()
+    mode = str(config.get("openai", {}).get("mode", "live")).lower()
+    if mode == "live" and engine != "mock":
+        from src.clients import openai_client as _oc
+        if _oc._MAX_TOKENS < 1000:
+            _oc._MAX_TOKENS = 1000
+        _ask = lambda prompt: _oc.client.chat(prompt)
+    else:
+        mock_client = _get_draft_client(config)
+        _ask = lambda prompt: mock_client.query(prompt)
+
+    advisories: list[AdvisoryRecommendation] = []
+    for rec in recommendations:
+        content = page_content.get(rec.affected_urls[0]) if rec.affected_urls else None
+        prompt = build_seo_advisory_prompt(rec, content)
+        try:
+            data = parse_json_object(_ask(prompt))
+        except Exception:
+            data = None
+        data = data if isinstance(data, dict) else {}
+
+        issue = str(data.get("issue") or "").strip() or rec.message
+        why = str(data.get("why_it_matters") or "").strip() or _FACTOR_WHY.get(
+            rec.factor, "Resolving this factor improves the page's search performance."
+        )
+        fix = str(data.get("recommendation") or "").strip() or _FACTOR_TASK.get(
+            rec.factor, "Address this SEO factor."
+        )
+        draft = str(data.get("draft") or "").strip() or _fallback_for(rec.factor)
+
+        advisories.append(
+            AdvisoryRecommendation(
+                area="SEO",
+                title=_FACTOR_LABEL.get(rec.factor, rec.factor),
+                priority=_seo_priority(rec.severity, len(rec.affected_urls)),
+                scope=_scope_str(rec.affected_urls),
+                issue=issue,
+                why_it_matters=why,
+                recommendation=fix,
+                draft=draft,
+            )
+        )
+    return advisories
 
 
 # ---------------------------------------------------------------------------

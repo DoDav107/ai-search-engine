@@ -123,14 +123,23 @@ def _parse_brand_list(raw: str | None) -> list[str]:
     return [str(item).strip() for item in data if str(item).strip()]
 
 
+def _norm_key(name: str) -> str:
+    """Matching key for a brand: casefold + drop all punctuation/whitespace.
+
+    Collapses case and punctuation variants so "HOKA"/"Hoka" → "hoka" and
+    "R.A.D"/"R.A.D." → "rad" map to one brand. Display forms are kept separately.
+    """
+    return re.sub(r"[^a-z0-9]+", "", (name or "").casefold())
+
+
 def _clean_competitors(names: list[str], aliases: list[str]) -> list[str]:
-    """Remove subject-brand aliases (case-insensitive) and dedupe, keeping first display form."""
-    alias_set = {a.strip().lower() for a in aliases if a and a.strip()}
+    """Remove subject-brand aliases and dedupe on the normalized key, keeping first display form."""
+    alias_keys = {_norm_key(a) for a in aliases if a and a.strip()}
     seen: set[str] = set()
     cleaned: list[str] = []
     for name in names:
-        key = name.lower()
-        if not key or key in alias_set or key in seen:
+        key = _norm_key(name)
+        if not key or key in alias_keys or key in seen:
             continue
         seen.add(key)
         cleaned.append(name)
@@ -165,18 +174,60 @@ def extract_competitors(
     return _clean_competitors(_parse_brand_list(raw), aliases)
 
 
+def normalize_competitor_names(results: list[GeoQueryResult]) -> None:
+    """Collapse case/punctuation variants across the run to ONE display form per brand.
+
+    Rewrites each query's ``competitors_found`` in place: every name with the same
+    normalized key is replaced by a single canonical display (the most query-frequent
+    variant, ties broken by first appearance), and each query is re-deduped on the key.
+    """
+    from collections import Counter
+
+    variant_counts: dict[str, Counter] = {}
+    first_seen: dict[tuple[str, str], int] = {}
+    seq = 0
+    for result in results:
+        for name in result.competitors_found or []:
+            key = _norm_key(name)
+            if not key:
+                continue
+            variant_counts.setdefault(key, Counter())[name] += 1
+            if (key, name) not in first_seen:
+                first_seen[(key, name)] = seq
+                seq += 1
+
+    canonical: dict[str, str] = {}
+    for key, counter in variant_counts.items():
+        # most frequent variant wins; tie-break by earliest appearance (stable)
+        canonical[key] = sorted(
+            counter.items(), key=lambda kv: (-kv[1], first_seen[(key, kv[0])])
+        )[0][0]
+
+    for result in results:
+        seen: set[str] = set()
+        rebuilt: list[str] = []
+        for name in result.competitors_found or []:
+            key = _norm_key(name)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            rebuilt.append(canonical.get(key, name))
+        result.competitors_found = rebuilt
+
+
 def build_competitors_summary(results: list[GeoQueryResult]) -> list[dict]:
     """Aggregate competitors across queries into a ranked [{name, query_count}] list.
 
-    Counts each competitor once per query (in how many queries it surfaced), deduped
-    case-insensitively, sorted by query_count desc then name for stable display.
+    Counts each competitor once per query (in how many queries it surfaced), deduped on
+    the normalized key, sorted by query_count desc then name. Assumes display names have
+    already been canonicalized via ``normalize_competitor_names``.
     """
-    counts: dict[str, list] = {}  # lower-key -> [display_name, query_count]
+    counts: dict[str, list] = {}  # norm-key -> [display_name, query_count]
     for result in results:
         seen_in_query: set[str] = set()
         for name in result.competitors_found:
-            key = name.lower()
-            if key in seen_in_query:
+            key = _norm_key(name)
+            if not key or key in seen_in_query:
                 continue
             seen_in_query.add(key)
             if key not in counts:
@@ -185,6 +236,73 @@ def build_competitors_summary(results: list[GeoQueryResult]) -> list[dict]:
     summary = [{"name": display, "query_count": count} for display, count in counts.values()]
     summary.sort(key=lambda item: (-item["query_count"], item["name"].lower()))
     return summary
+
+
+def _ordinal(n: int) -> str:
+    """1 -> '1st', 2 -> '2nd', 11 -> '11th', etc."""
+    if 10 <= n % 100 <= 20:
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
+def build_share_of_voice(
+    results: list[GeoQueryResult], subject_brand: str, aliases: list[str]
+) -> list[dict]:
+    """Share of Voice by PRESENCE: per brand, (# queries it appears in) / (measured queries).
+
+    The subject brand is included in the ranking (matched via its aliases on
+    brand_mentioned). Pure post-processing over already-captured data — no API calls,
+    and prominence/visibility/geo_score are untouched. Sorted by share desc.
+    """
+    measured = [r for r in results if not r.error]
+    total = len(measured)
+    subj_key = _norm_key(subject_brand)
+    alias_keys = {_norm_key(a) for a in (aliases or [subject_brand]) if a and a.strip()}
+    alias_keys.add(subj_key)
+
+    # norm-key -> [display, queries_present, is_subject]; subject always present in ranking
+    counts: dict[str, list] = {subj_key: [subject_brand, 0, True]}
+    for result in measured:
+        present: set[str] = set()
+        if result.brand_mentioned:
+            present.add(subj_key)
+        for name in result.competitors_found or []:
+            key = _norm_key(name)
+            if not key:
+                continue
+            present.add(key)
+            if key not in counts:
+                counts[key] = [name, 0, key in alias_keys]
+        for key in present:
+            counts[key][1] += 1
+
+    sov = [
+        {
+            "brand": display,
+            "is_subject": bool(is_subject),
+            "queries_present": qp,
+            "share": round(qp / total, 4) if total else 0.0,
+        }
+        for display, qp, is_subject in counts.values()
+    ]
+    sov.sort(key=lambda x: (-x["share"], -x["queries_present"], x["brand"].lower()))
+    return sov
+
+
+def sov_headline(share_of_voice: list[dict], subject_brand: str) -> str:
+    """Punchy one-liner: 'Nike ranks 1st of 12 brands by Share of Voice'."""
+    if not share_of_voice:
+        return ""
+    subject = next((s for s in share_of_voice if s.get("is_subject")), None)
+    if subject is None:
+        return ""
+    total = len(share_of_voice)
+    rank = 1 + sum(1 for s in share_of_voice if s["share"] > subject["share"])
+    tied = sum(1 for s in share_of_voice if s["share"] == subject["share"]) > 1
+    tie_txt = " (tied)" if tied else ""
+    return f"{subject_brand} ranks {_ordinal(rank)} of {total} brands by Share of Voice{tie_txt}"
 
 
 def score_geo(report: GeoReport) -> float:
@@ -218,6 +336,19 @@ def score_geo(report: GeoReport) -> float:
     return score
 
 
+def _measurement_input(query: str) -> str:
+    """Frame a measurement query to encourage a current, web-informed answer.
+
+    Brand-neutral on purpose — it must not bias the answer toward any brand; it only
+    nudges the model to browse so the result reflects a real browsing assistant.
+    """
+    return (
+        "Use web search to find current information, then answer the question for a "
+        "general user. Recommend specific brands/companies where relevant.\n\n"
+        f"Question: {query}"
+    )
+
+
 def run_geo(config: dict[str, Any]) -> GeoReport:
     """Run GEO queries and collect brand visibility data."""
     brand = config.get("brand", "Unknown Brand")
@@ -227,19 +358,44 @@ def run_geo(config: dict[str, Any]) -> GeoReport:
 
     openai_cfg = config.get("openai", {})
     openai_mode = openai_cfg.get("mode", "mock")
+    ws_cfg = config.get("web_search", {})
+    ws_enabled = bool(ws_cfg.get("enabled", True))
     openai_client = None
+
+    # Each measurement returns a dict: {"text", "web_search_used", "sources"}. Only the
+    # SOURCE of the answer differs between paths — brand detection / scoring are unchanged.
     if openai_mode == "live":
         from src.clients.openai_client import client as openai_client
         # Measurement needs more token headroom than the default so the reasoning model
         # has room for both reasoning and the answer; low reasoning effort helps too.
         measure_tokens = int(openai_cfg.get("measurement_max_completion_tokens", 2000))
         reasoning_effort = openai_cfg.get("reasoning_effort") or None
-        _get_answer = lambda q: openai_client.chat(
-            q, max_completion_tokens=measure_tokens, reasoning_effort=reasoning_effort
-        )
+
+        if ws_enabled:
+            # Live web search via the Responses API — reflects a browsing assistant.
+            ws_reasoning = ws_cfg.get("reasoning_effort") or reasoning_effort or "low"
+            ws_timeout = float(ws_cfg.get("timeout", 180))
+            ws_max = int(ws_cfg.get("max_output_tokens", measure_tokens))
+
+            def _measure(q: str) -> dict[str, Any]:
+                return openai_client.respond_with_web_search(
+                    _measurement_input(q),
+                    reasoning_effort=ws_reasoning,
+                    max_output_tokens=ws_max,
+                    timeout=ws_timeout,
+                )
+        else:
+            # Baseline: plain chat-completions on the same model (no browsing).
+            def _measure(q: str) -> dict[str, Any]:
+                text = openai_client.chat(
+                    q, max_completion_tokens=measure_tokens, reasoning_effort=reasoning_effort
+                )
+                return {"text": text, "web_search_used": False, "sources": []}
     else:
         mock_client = get_engine_client(config)
-        _get_answer = lambda q: mock_client.query(q)
+
+        def _measure(q: str) -> dict[str, Any]:
+            return {"text": mock_client.query(q), "web_search_used": False, "sources": []}
 
     # Competitor auto-extraction (a separate, cheap call per answer). Independent of the
     # measurement call/model/prompt; never affects scoring, prominence, or visibility.
@@ -263,21 +419,39 @@ def run_geo(config: dict[str, Any]) -> GeoReport:
 
     results: list[GeoQueryResult] = []
     for query in queries:
+        web_search_used = False
+        sources: list[dict] = []
         try:
-            answer = _get_answer(query)
+            res = _measure(query)
+            answer = res.get("text", "")
+            web_search_used = bool(res.get("web_search_used"))
+            sources = res.get("sources") or []
             if _is_empty(answer):
-                # Empty completion (reasoning consumed the budget) — retry once.
-                answer = _get_answer(query)
+                # Empty (reasoning ate the budget, or a slow web-search call returned
+                # nothing) — retry once.
+                res = _measure(query)
+                answer = res.get("text", "")
+                web_search_used = bool(res.get("web_search_used"))
+                sources = res.get("sources") or []
             if _is_empty(answer):
                 # Still empty: a measurement failure, NOT a genuine "brand absent".
                 result = GeoQueryResult(
                     query=query, engine=engine_type, answer="",
                     error="empty completion — no answer returned after retry",
+                    web_search_used=web_search_used, sources=sources,
                 )
             else:
-                result = GeoQueryResult(query=query, engine=engine_type, answer=answer, error=None)
+                result = GeoQueryResult(
+                    query=query, engine=engine_type, answer=answer, error=None,
+                    web_search_used=web_search_used, sources=sources,
+                )
         except Exception as exc:
-            result = GeoQueryResult(query=query, engine=engine_type, answer="", error=str(exc))
+            # Error/timeout — leave it unscored with web_search_used=False; never record
+            # a false zero for a query that didn't actually browse.
+            result = GeoQueryResult(
+                query=query, engine=engine_type, answer="", error=str(exc),
+                web_search_used=False, sources=[],
+            )
 
         # detect_brand_mentions early-returns on error, so error rows keep the default
         # (unmeasured) state and are excluded from scoring/visibility below.
@@ -293,7 +467,12 @@ def run_geo(config: dict[str, Any]) -> GeoReport:
         results.append(result)
 
     report = GeoReport(brand=brand, engine=engine_type, results=results, geo_score=0.0)
+    # Collapse case/punctuation variants to one display per brand BEFORE aggregating,
+    # so the summary and Share of Voice count each brand once.
+    normalize_competitor_names(results)
     report.competitors_summary = build_competitors_summary(results)
+    report.share_of_voice = build_share_of_voice(results, brand, brand_aliases)
+    report.sov_headline = sov_headline(report.share_of_voice, brand)
     score_geo(report)
     return report
 

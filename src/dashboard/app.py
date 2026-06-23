@@ -471,6 +471,27 @@ with st.sidebar:
         width="stretch",
     )
 
+    # Branded PDF — built by the pipeline; regenerate on demand from the saved JSON
+    # (offline, no API calls). Shows a download once the PDF exists.
+    pdf_path = REPORTS_DIR / "latest_report.pdf"
+    pdf_name = f"{(brand or 'audit').lower().replace(' ', '_')}_audit_report.pdf"
+    if pdf_path.exists():
+        st.download_button(
+            "⬇️ Download PDF",
+            data=pdf_path.read_bytes(),
+            file_name=pdf_name,
+            mime="application/pdf",
+            width="stretch",
+        )
+    elif st.button("📄 Generate PDF", width="stretch"):
+        try:
+            from src.reporting.pdf_report import build_pdf
+            with st.spinner("Rendering branded PDF…"):
+                build_pdf(report_path=report_path, output_path=pdf_path)
+            st.rerun()
+        except Exception as exc:
+            st.error(f"PDF generation failed: {exc}")
+
     # Pages CSV
     if scored_pages:
         pages_csv = pd.DataFrame(
@@ -783,6 +804,44 @@ if geo_results:
             "No answer returned (excluded from scoring): "
             + "; ".join(r.get("query", "") for r in errored)
         )
+
+    # Share of Voice — ranked brands (subject + competitors) by presence across answers
+    sov = geo.get("share_of_voice") or []
+    sov_head = (geo.get("sov_headline") or "").strip()
+    if sov:
+        st.markdown("#### Share of Voice")
+        if sov_head:
+            st.markdown(
+                f"<div class='rec' style='border-left-color:{ACCENT};'>🏆 <b>{escape(sov_head)}</b></div>",
+                unsafe_allow_html=True,
+            )
+        TOPN = 15
+        shown = list(sov[:TOPN])
+        if not any(s.get("is_subject") for s in shown):
+            subj = next((s for s in sov if s.get("is_subject")), None)
+            if subj:
+                shown.append(subj)
+        names = [s.get("brand", "") for s in shown]
+        shares = [round((s.get("share") or 0.0) * 100, 1) for s in shown]
+        colors = [ACCENT if s.get("is_subject") else "#475569" for s in shown]
+        sov_fig = go.Figure(
+            go.Bar(
+                x=shares, y=names, orientation="h", marker_color=colors,
+                text=[f"{v:.0f}%" for v in shares], textposition="auto",
+                hovertemplate="%{y}: %{x:.1f}% of answers<extra></extra>",
+            )
+        )
+        sov_fig.update_layout(
+            height=max(300, 26 * len(shown)),
+            title="Brands ranked by Share of Voice (presence across AI answers)",
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            font={"color": INK, "family": "Inter"},
+            margin=dict(l=10, r=10, t=48, b=10),
+            xaxis={"range": [0, 100], "gridcolor": "rgba(255,255,255,0.08)", "title": "Share of measured queries (%)"},
+            yaxis={"autorange": "reversed"},
+        )
+        st.plotly_chart(sov_fig, width="stretch", config={"displayModeBar": False})
+        st.caption(f"{escape((brand or 'Subject'))} highlighted. Share = queries where the brand appears ÷ measured queries.")
 
     # Per-query expander: answer excerpt + competitors
     st.markdown("#### Query-by-query detail")

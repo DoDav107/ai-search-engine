@@ -152,7 +152,11 @@ function QueryRow({ r }: { r: GeoResult }) {
 }
 
 export function GeoSection({ report }: { report: Report }) {
+  const reduce = useReducedMotion();
   const results = report.geo_report?.results ?? [];
+  const brand = report.geo_report?.brand ?? report.brand ?? "Subject";
+  const sov = report.geo_report?.share_of_voice ?? [];
+  const sovHeadline = report.geo_report?.sov_headline ?? "";
   const geoScore = report.geo_report?.geo_score ?? report.geo_score ?? 0;
 
   const { measured, noAnswer, mentioned, visibility } = useMemo(() => {
@@ -216,6 +220,65 @@ export function GeoSection({ report }: { report: Report }) {
           </motion.div>
         )}
       </div>
+
+      {/* Share of Voice — ranked brands (subject + competitors) by presence */}
+      {sov.length > 0 && (() => {
+        const TOPN = 15;
+        let shown = sov.slice(0, TOPN);
+        if (!shown.some((s) => s.is_subject)) {
+          const subj = sov.find((s) => s.is_subject);
+          if (subj) shown = [...shown, subj];
+        }
+        return (
+          <motion.div variants={sectionItem} className={`${GLASS} mt-6 p-5 sm:p-6`}>
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Share of Voice
+            </p>
+            {sovHeadline && (
+              <p className="mt-1 text-base font-semibold text-foreground">🏆 {sovHeadline}</p>
+            )}
+            <p className="mt-1 text-xs text-muted-foreground">
+              Share of measured queries where each brand appears — {brand} highlighted.
+            </p>
+            <div className="mt-4 space-y-2">
+              {shown.map((s) => {
+                const pct = Math.round(s.share * 1000) / 10;
+                return (
+                  <div
+                    key={s.brand}
+                    className="grid grid-cols-[minmax(0,130px)_1fr_auto] items-center gap-3"
+                  >
+                    <span
+                      className={`truncate text-sm ${s.is_subject ? "font-semibold text-foreground" : "text-foreground/80"}`}
+                      title={s.brand}
+                    >
+                      {s.brand}
+                      {s.is_subject ? " ★" : ""}
+                    </span>
+                    <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/[0.06]">
+                      <motion.div
+                        className="h-full rounded-full"
+                        style={{
+                          backgroundColor: s.is_subject
+                            ? "var(--color-brand)"
+                            : "rgba(148,163,184,0.55)",
+                        }}
+                        initial={{ width: reduce ? `${pct}%` : 0 }}
+                        whileInView={{ width: `${pct}%` }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
+                      />
+                    </div>
+                    <span className="w-12 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground">
+                      {pct.toFixed(0)}%
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
+        );
+      })()}
 
       {/* Per-query table */}
       <motion.div variants={sectionItem} className={`${GLASS} mt-6 overflow-hidden`}>

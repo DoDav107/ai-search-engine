@@ -113,6 +113,86 @@ class OpenAIClient:
         except openai.OpenAIError as exc:
             raise RuntimeError(f"OpenAI API error: {exc}") from exc
 
+    def respond_with_web_search(
+        self,
+        prompt: str,
+        reasoning_effort: str | None = None,
+        max_output_tokens: int | None = None,
+        model: str | None = None,
+        timeout: float | None = None,
+    ) -> dict[str, Any]:
+        """Run a GEO measurement via the Responses API with the web_search tool enabled.
+
+        Returns a dict: ``{"text": str, "web_search_used": bool, "sources": [{"url","title"}]}``.
+        Unlike ``chat`` (chat.completions, used for extraction/drafting), this uses
+        ``responses.create`` so the model can browse and return url_citation annotations.
+        The answer is read from ``output_text`` (the output is a typed array — message vs
+        reasoning vs tool-call items — never assume a fixed position).
+
+        Raises RuntimeError on cap/auth/rate/API errors (callers treat that as an
+        unmeasured query, not a genuine zero). The shared per-run call cap applies.
+        """
+        if self.call_count >= _MAX_CALLS:
+            raise RuntimeError(
+                f"OpenAI call cap reached ({_MAX_CALLS} calls per run). "
+                "Increase openai.max_calls_per_run in geo_config.yaml to allow more."
+            )
+
+        kwargs: dict[str, Any] = {
+            "model": model or _MODEL,
+            "input": prompt,
+            "tools": [{"type": "web_search"}],
+        }
+        if reasoning_effort:
+            kwargs["reasoning"] = {"effort": reasoning_effort}
+        if max_output_tokens is not None:
+            kwargs["max_output_tokens"] = max_output_tokens
+
+        api = self._client if timeout is None else self._client.with_options(timeout=timeout)
+
+        try:
+            self.call_count += 1
+            response = api.responses.create(**kwargs)
+        except openai.AuthenticationError as exc:
+            raise RuntimeError(f"OpenAI authentication failed — check OPENAI_API_KEY: {exc}") from exc
+        except openai.RateLimitError as exc:
+            raise RuntimeError(f"OpenAI rate limit hit: {exc}") from exc
+        except openai.OpenAIError as exc:
+            raise RuntimeError(f"OpenAI API error: {exc}") from exc
+
+        text = (getattr(response, "output_text", None) or "").strip()
+        web_search_used, sources = _extract_search_metadata(response)
+        return {"text": text, "web_search_used": web_search_used, "sources": sources}
+
+
+def _extract_search_metadata(response: Any) -> tuple[bool, list[dict[str, str]]]:
+    """Pull (web_search_used, sources) from a Responses object.
+
+    ``web_search_used`` is True if the output contains a web_search tool call OR any
+    url_citation annotation. ``sources`` is the de-duplicated list of url_citation
+    annotations ({"url", "title"}). All access is defensive — the typed output items
+    vary (message / reasoning / web_search_call) and order is not assumed.
+    """
+    web_search_used = False
+    sources: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    for item in getattr(response, "output", None) or []:
+        itype = getattr(item, "type", "") or ""
+        if "web_search" in itype:  # e.g. "web_search_call"
+            web_search_used = True
+        for part in getattr(item, "content", None) or []:
+            for ann in getattr(part, "annotations", None) or []:
+                if getattr(ann, "type", None) == "url_citation":
+                    url = getattr(ann, "url", None)
+                    if url and url not in seen:
+                        seen.add(url)
+                        sources.append({"url": url, "title": getattr(ann, "title", None) or ""})
+
+    if sources:
+        web_search_used = True
+    return web_search_used, sources
+
 
 # ---------------------------------------------------------------------------
 # Module-level singleton — call cap is shared across the whole pipeline run

@@ -6,3 +6,4 @@ streamlit
 plotly
 openai
 python-dotenv
+playwright  # branded PDF export (renders HTML→PDF via Chromium); run `playwright install chromium`

@@ -50,6 +50,18 @@ openai:
   advisory_max_completion_tokens: 3500
   advisory_timeout: 120
 
+# Live web search for the GEO MEASUREMENT call only (Responses API + web_search tool,
+# still model gpt-5.5). When enabled, the answer reflects what a browsing AI assistant
+# actually returns, with citations captured per query. Toggle off to fall back to the
+# plain chat-completions baseline (gpt-5.5 training knowledge) for comparison.
+# These calls are agentic and slow, so the timeout is generous — a premature timeout
+# returns empty and is recorded as an error (unscored), never a false zero.
+web_search:
+  enabled: true
+  reasoning_effort: "low"      # start modest; raise if answers are thin
+  max_output_tokens: 2000
+  timeout: 180                 # generous — web search is agentic and slow
+
 # Auto-extraction of rival brands surfaced in each AI answer. Runs a SECOND, separate
 # call per query over the already-generated answer text (the measurement call is never
 # changed). Brands are grounded strictly in the answer text, then brand_aliases are

@@ -26,6 +26,13 @@ export type GeoResult = {
   competitors_found: string[];
 };
 
+export type ShareOfVoice = {
+  brand: string;
+  is_subject: boolean;
+  queries_present: number;
+  share: number; // 0..1
+};
+
 export type Priority = "High" | "Medium" | "Low" | string;
 
 export type Recommendation = {
@@ -46,7 +53,15 @@ export type Report = {
   geo_score?: number;
   unified_score?: number;
   seo_report?: { site_name?: string; score?: number; pages: PageReport[] };
-  geo_report?: { brand?: string; engine?: string; geo_score?: number; results: GeoResult[] };
+  geo_report?: {
+    brand?: string;
+    engine?: string;
+    geo_score?: number;
+    results: GeoResult[];
+    competitors_summary?: { name: string; query_count: number }[];
+    share_of_voice?: ShareOfVoice[];
+    sov_headline?: string;
+  };
   seo_recommendations?: Recommendation[];
   geo_recommendations?: Recommendation[];
   geo_assessment?: string;

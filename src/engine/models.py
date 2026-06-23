@@ -44,6 +44,11 @@ class GeoQueryResult:
     mention_count: int = 0
     first_position: int | None = None
     competitors_found: List[str] = field(default_factory=list)
+    # True only if the measurement call actually browsed (web_search tool call or
+    # citations). Distinguishes a real "browsed, brand absent" from a no-browse/error.
+    web_search_used: bool = False
+    # url_citation annotations returned by the measurement call: [{"url","title"}].
+    sources: List[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -55,6 +60,12 @@ class GeoReport:
     # Ranked aggregate of rival brands surfaced across queries:
     # [{"name": "Adidas", "query_count": 6}, ...] sorted by query_count desc.
     competitors_summary: List[dict] = field(default_factory=list)
+    # Share of Voice by presence — subject + competitors ranked by the share of
+    # measured queries each appears in:
+    # [{"brand": "Nike", "is_subject": true, "queries_present": 8, "share": 1.0}, ...]
+    share_of_voice: List[dict] = field(default_factory=list)
+    # Punchy headline, e.g. "Nike ranks 1st of 12 brands by Share of Voice".
+    sov_headline: str = ""
 
 
 @dataclass

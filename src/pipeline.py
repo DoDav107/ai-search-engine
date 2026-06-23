@@ -52,6 +52,15 @@ def _save_combined_report(combined_report: CombinedReport) -> Path:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     with (report_dir / f"report_{timestamp}.json").open("w", encoding="utf-8") as stream:
         json.dump(payload, stream, indent=2)
+
+    # Render the branded PDF from the just-saved JSON (purely offline). Best-effort:
+    # a PDF/render failure must never break the pipeline or the JSON report.
+    try:
+        from src.reporting.pdf_report import build_pdf
+        build_pdf(report_path=latest_path, output_path=report_dir / "latest_report.pdf")
+    except Exception as exc:  # noqa: BLE001 — PDF is a nice-to-have, not critical
+        print(f"⚠️  PDF export skipped: {exc}")
+
     return latest_path
 
 

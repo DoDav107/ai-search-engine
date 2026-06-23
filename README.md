@@ -39,6 +39,31 @@ The key is only needed if you switch `engine` in `config/geo_config.yaml` from `
 
 Run everything from the **repo root** with the venv active. Steps can be run individually or all at once via the pipeline.
 
+### One-command launcher (Makefile)
+
+A single entry point runs the pipeline and both dashboards. Targets are config-driven and client-agnostic (the site/brand comes from `config/*.yaml`):
+
+```bash
+make pipeline     # run the full audit → data/reports/latest_report.json + history + PDF
+make dashboard    # launch the Streamlit dashboard   (http://localhost:8501)
+make web          # launch the Next.js dashboard     (http://localhost:3000)
+make all          # launch BOTH dashboards together  (Ctrl-C stops both)
+make install      # install Python + Node deps and the Playwright (PDF) browser
+make help         # list all targets
+```
+
+Ports are overridable, e.g. `make all STREAMLIT_PORT=8600 WEB_PORT=3100`. The launcher uses `.venv/bin/python` automatically if a venv is present.
+
+### Report history
+
+Every pipeline run keeps `data/reports/latest_report.json` as the "most recent" pointer **and** writes an immutable, timestamped copy under `data/reports/history/<client>/<YYYY-MM-DDTHH-MM-SSZ>.json`, so past runs are never overwritten (this is what a future trend view reads). List a client's history programmatically:
+
+```python
+from src.reporting.history import list_reports, list_clients
+list_clients()             # e.g. ["nike"]
+list_reports("Nike")       # paths sorted oldest → newest
+```
+
 ### Full pipeline (recommended)
 
 Crawls the site, scores SEO factors, runs GEO queries, combines scores, and saves a unified report to `data/reports/`:

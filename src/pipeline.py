@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -36,7 +35,8 @@ def _normalize_weights(weights: dict[str, float]) -> tuple[float, float]:
 
 
 def _save_combined_report(combined_report: CombinedReport) -> Path:
-    """Save the report as latest_report.json (overwritten) plus a timestamped copy.
+    """Save latest_report.json (the "most recent" pointer) plus an immutable,
+    client-scoped, timestamped history copy so past runs are never overwritten.
 
     asdict() recurses through the nested dataclasses (SiteReport, GeoReport, and the
     DraftedFix recommendations), so the whole payload is JSON-serializable.
@@ -49,9 +49,15 @@ def _save_combined_report(combined_report: CombinedReport) -> Path:
     with latest_path.open("w", encoding="utf-8") as stream:
         json.dump(payload, stream, indent=2)
 
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    with (report_dir / f"report_{timestamp}.json").open("w", encoding="utf-8") as stream:
-        json.dump(payload, stream, indent=2)
+    # Timestamped, client-scoped history copy (data/reports/history/<client>/<ts>.json).
+    # The client name comes from config via the report — never hardcoded.
+    client = combined_report.brand or combined_report.site_name or "unknown"
+    try:
+        from src.reporting.history import save_report_history
+        hist_path = save_report_history(payload, client)
+        print(f"📁 Saved history copy: {hist_path}")
+    except Exception as exc:  # noqa: BLE001 — history must not break the run
+        print(f"⚠️  History copy skipped: {exc}")
 
     # Render the branded PDF from the just-saved JSON (purely offline). Best-effort:
     # a PDF/render failure must never break the pipeline or the JSON report.

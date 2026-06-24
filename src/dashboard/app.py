@@ -426,9 +426,128 @@ def _render_draft(draft: str) -> None:
 # ---------------------------------------------------------------------------
 inject_css()
 
+# ---------------------------------------------------------------------------
+# New Audit — trigger the pipeline in-process for a custom brand/domain/queries.
+# Diagnose-and-recommend only (crawl + measure + draft); never publishes or edits
+# the live site. The read-only "view last report" mode below is the default and
+# works with no input.
+# ---------------------------------------------------------------------------
+MAX_QUERIES = 10
 report_path = REPORTS_DIR / "latest_report.json"
+
+
+def _normalize_audit_url(url: str) -> str:
+    url = (url or "").strip()
+    if url and "://" not in url:
+        url = "https://" + url
+    return url
+
+
+def _validate_audit(brand: str, url: str, queries_raw: str) -> tuple[str, str, list[str], list[str]]:
+    """Return (brand, normalized_url, queries, errors). Never raises."""
+    from urllib.parse import urlparse
+
+    errors: list[str] = []
+    brand = (brand or "").strip()
+    url = _normalize_audit_url(url)
+    queries = [q.strip() for q in (queries_raw or "").splitlines() if q.strip()]
+    if not brand:
+        errors.append("Brand / company name is required.")
+    parsed = urlparse(url)
+    if not (parsed.scheme in ("http", "https") and parsed.netloc and "." in parsed.netloc):
+        errors.append("Enter a valid website URL (e.g. https://example.com).")
+    if not queries:
+        errors.append("Add at least one target query (one per line).")
+    if len(queries) > MAX_QUERIES:
+        errors.append(f"Too many queries ({len(queries)}). The cap is {MAX_QUERIES} — remove some.")
+    return brand, url, queries, errors
+
+
+# Sidebar form — rendered first so it's available even before any report exists.
+with st.sidebar:
+    with st.expander("🚀 New Audit", expanded=not report_path.exists()):
+        st.caption(
+            "Run a fresh audit on your own brand and domain. Diagnose-and-recommend only — "
+            "it never publishes or changes your site."
+        )
+        na_brand = st.text_input("Brand / company name", key="na_brand", placeholder="e.g. Acme Running")
+        na_url = st.text_input("Website URL", key="na_url", placeholder="https://example.com")
+        na_queries = st.text_area(
+            "Target queries (one per line)", key="na_queries", height=130,
+            placeholder="What are the best running shoe brands?\nMost popular sneakers right now?",
+        )
+        _q_count = len([q for q in (na_queries or "").splitlines() if q.strip()])
+        st.caption(f"{_q_count}/{MAX_QUERIES} queries · each runs a live web-search measurement (paid).")
+        na_confirm = st.checkbox(
+            "I understand this crawls the site and makes live, paid AI calls.", key="na_confirm"
+        )
+        if st.button("Run Audit", type="primary", width="stretch", key="na_run"):
+            _b, _u, _qs, _errs = _validate_audit(na_brand, na_url, na_queries)
+            if not na_confirm:
+                _errs.append("Tick the confirmation box before running.")
+            if _errs:
+                for _e in _errs:
+                    st.error(_e)
+            else:
+                st.session_state["pending_audit"] = {"brand": _b, "url": _u, "queries": _qs}
+                st.rerun()
+
+
+# Pending-audit executor — runs in the main area with live, streamed progress.
+_pending = st.session_state.get("pending_audit")
+if _pending:
+    import time as _time
+
+    st.markdown("## 🚀 Running New Audit")
+    st.caption(f"{_pending['brand']} — {_pending['url']} · {len(_pending['queries'])} query(ies)")
+    _status = st.status("Starting…", expanded=True)
+    _log = st.empty()
+    _start = _time.time()
+    _lines: list[str] = []
+
+    def _audit_progress(ev: dict) -> None:
+        elapsed = _time.time() - _start
+        phase = ev.get("phase")
+        if phase == "crawl":
+            msg = "🕷️ Crawling site & scoring SEO…"
+        elif phase == "crawl_done":
+            msg = f"✅ SEO scored — {ev.get('pages', 0)} page(s)"
+        elif phase == "geo_start":
+            msg = f"🤖 GEO measurement ({ev.get('total', 0)} queries)…"
+        elif phase == "geo":
+            browsed = "🌐 browsed" if ev.get("web_search_used") else "⚠️ no browse"
+            err = " · error" if ev.get("error") else ""
+            msg = f"[GEO {ev.get('index')}/{ev.get('total')}] {str(ev.get('query', ''))[:60]} — {browsed}{err}"
+        elif phase == "recommend":
+            msg = "📝 Building recommendations & draft fixes…"
+        elif phase == "saving":
+            msg = "💾 Saving report (latest + history) and PDF…"
+        elif phase == "done":
+            msg = "🎉 Audit complete."
+        else:
+            msg = ev.get("message", "")
+        _lines.append(f"`{elapsed:5.0f}s`  {msg}")
+        _status.update(label=f"{msg}   ·   {elapsed:.0f}s elapsed")
+        _log.markdown("\n\n".join(_lines[-14:]))
+
+    try:
+        from src.pipeline import build_audit_configs, run_pipeline
+
+        _seo_cfg, _geo_cfg = build_audit_configs(_pending["brand"], _pending["url"], _pending["queries"])
+        run_pipeline(seo_config=_seo_cfg, geo_config=_geo_cfg, progress=_audit_progress)
+        _status.update(label="Audit complete — loading report…", state="complete")
+        st.session_state.pop("pending_audit", None)
+        st.cache_data.clear()
+        st.rerun()
+    except Exception as _exc:  # keep the app usable; never hang
+        _status.update(label="Audit failed", state="error")
+        st.session_state.pop("pending_audit", None)
+        st.error(f"Audit failed: {_exc}")
+        st.info("Your previous report (if any) is shown below — adjust the inputs in the sidebar and retry.")
+
+
 if not report_path.exists():
-    st.info("No report yet — run `python -m src.pipeline` to generate one.")
+    st.info("No report yet — start one from the **🚀 New Audit** panel in the sidebar, or run `python -m src.pipeline`.")
     st.stop()
 
 combined: dict = _load_json(str(report_path), report_path.stat().st_mtime) or {}
@@ -619,6 +738,197 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+
+# ---------------------------------------------------------------------------
+# Trends over time — reads timestamped report history only (no API, no scoring)
+# ---------------------------------------------------------------------------
+def _visibility_from_payload(payload: dict) -> float | None:
+    results = (payload.get("geo_report") or {}).get("results") or []
+    measured = [r for r in results if not r.get("error")]
+    if not measured:
+        return None
+    mentioned = sum(1 for r in measured if r.get("brand_mentioned"))
+    return round(mentioned / len(measured) * 100, 1)
+
+
+def _subject_sov(payload: dict) -> float | None:
+    for s in (payload.get("geo_report") or {}).get("share_of_voice") or []:
+        if s.get("is_subject"):
+            return round((s.get("share") or 0.0) * 100, 1)
+    return None
+
+
+def _sov_map(payload: dict) -> dict[str, float]:
+    return {
+        (s.get("brand") or "").strip(): round((s.get("share") or 0.0) * 100, 1)
+        for s in (payload.get("geo_report") or {}).get("share_of_voice") or []
+    }
+
+
+def _query_prominence(payload: dict, query: str) -> tuple[bool, float | None]:
+    for r in (payload.get("geo_report") or {}).get("results") or []:
+        if r.get("query") == query:
+            if r.get("error"):
+                return (False, None)
+            mentioned = bool(r.get("brand_mentioned"))
+            prom = None
+            if mentioned and r.get("first_position") is not None:
+                length = len(r.get("answer") or "")
+                if length > 0:
+                    prom = round(max(0.0, min((1.0 - r["first_position"] / length) * 100, 100.0)), 1)
+            return (mentioned, prom)
+    return (False, None)
+
+
+def _trend_line(title: str, series: list[tuple], ylabel: str = "Score (%)") -> go.Figure:
+    fig = go.Figure()
+    for name, color, xs, ys in series:
+        fig.add_scatter(
+            x=xs, y=ys, mode="lines+markers", name=name, connectgaps=True,
+            line={"color": color, "width": 3}, marker={"size": 7, "color": color},
+        )
+    fig.update_layout(
+        height=320, title=title, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font={"color": INK, "family": "Inter"}, margin=dict(l=10, r=10, t=54, b=10),
+        legend={"orientation": "h", "y": 1.16, "x": 0},
+        yaxis={"range": [0, 100], "gridcolor": "rgba(255,255,255,0.08)", "title": ylabel},
+        xaxis={"gridcolor": "rgba(255,255,255,0.06)"},
+    )
+    return fig
+
+
+def _render_trends(default_brand: str) -> None:
+    from src.reporting import history as _hist
+
+    st.markdown("## 📈 Trends over time")
+    clients = _hist.list_clients()
+    if not clients:
+        st.info("No saved history yet — run an audit from the **🚀 New Audit** panel to start building trends.")
+        return
+
+    default_slug = _hist.slugify(default_brand) if default_brand else None
+    idx = clients.index(default_slug) if default_slug in clients else 0
+    pick_col, range_col = st.columns([1, 2])
+    client = pick_col.selectbox("Client", clients, index=idx, key="trend_client")
+
+    runs = [(ts, p) for ts, p in _hist.load_reports(client) if ts is not None]
+    if len(runs) < 2:
+        st.info(
+            f"📊 Need at least 2 runs to show trends — **{client}** has {len(runs)}. "
+            "Run another audit to compare over time."
+        )
+        return
+
+    d_min, d_max = runs[0][0].date(), runs[-1][0].date()
+    rng = range_col.date_input(
+        "Date range", value=(d_min, d_max), min_value=d_min, max_value=d_max, key="trend_range"
+    )
+    if isinstance(rng, (tuple, list)) and len(rng) == 2:
+        lo, hi = rng
+        runs = [(ts, p) for ts, p in runs if lo <= ts.date() <= hi]
+    if len(runs) < 2:
+        st.info("Need at least 2 runs in the selected date range — widen the range.")
+        return
+
+    xs = [ts for ts, _ in runs]
+    prev_p, last_p = runs[-2][1], runs[-1][1]
+
+    def _num(payload: dict, key: str) -> float | None:
+        v = payload.get(key)
+        return float(v) if isinstance(v, (int, float)) else None
+
+    st.caption(
+        f"Change since previous run · {runs[-2][0].strftime('%d %b %Y %H:%M UTC')} "
+        f"→ {runs[-1][0].strftime('%d %b %Y %H:%M UTC')}"
+    )
+    metrics = [
+        ("Unified", _num(last_p, "unified_score"), _num(prev_p, "unified_score")),
+        ("SEO", _num(last_p, "seo_score"), _num(prev_p, "seo_score")),
+        ("GEO", _num(last_p, "geo_score"), _num(prev_p, "geo_score")),
+        ("Brand visibility", _visibility_from_payload(last_p), _visibility_from_payload(prev_p)),
+    ]
+    cards = []
+    for name, cur, prv in metrics:
+        cur_s = f"{cur:.1f}%" if cur is not None else "—"
+        if cur is not None and prv is not None:
+            delta = round(cur - prv, 1)
+            arrow = "▲" if delta > 0 else ("▼" if delta < 0 else "▬")
+            dcol = GREEN if delta > 0 else (RED if delta < 0 else "var(--muted)")
+            delta_html = f"<span style='color:{dcol};font-weight:700'>{arrow} {abs(delta):.1f}</span> vs prev"
+        else:
+            delta_html = "<span style='color:var(--muted)'>— no prior</span>"
+        cards.append(
+            f"<div class='gcard'><div class='label'>{escape(name)}</div>"
+            f"<div class='value'>{cur_s}</div><div class='foot'>{delta_html}</div></div>"
+        )
+    st.markdown(f"<div class='metric-grid'>{''.join(cards)}</div>", unsafe_allow_html=True)
+
+    # Score + visibility trends
+    st.plotly_chart(
+        _trend_line("Scores & visibility over time", [
+            ("Unified", ACCENT, xs, [_num(p, "unified_score") for _, p in runs]),
+            ("SEO", "#38bdf8", xs, [_num(p, "seo_score") for _, p in runs]),
+            ("GEO", GREEN, xs, [_num(p, "geo_score") for _, p in runs]),
+            ("Brand visibility", AMBER, xs, [_visibility_from_payload(p) for _, p in runs]),
+        ]),
+        width="stretch", config={"displayModeBar": False},
+    )
+
+    # Share-of-Voice trend: subject + top 3 competitors (ranked by the latest run)
+    if any(_subject_sov(p) is not None for _, p in runs):
+        last_sov = (last_p.get("geo_report") or {}).get("share_of_voice") or []
+        subject_name = next((s.get("brand") for s in last_sov if s.get("is_subject")), default_brand or "You")
+        top_comps = [
+            s.get("brand") for s in sorted(last_sov, key=lambda s: -(s.get("share") or 0.0))
+            if not s.get("is_subject")
+        ][:3]
+        sov_maps = [_sov_map(p) for _, p in runs]
+        series = [(f"{subject_name} (you)", ACCENT, xs, [_subject_sov(p) for _, p in runs])]
+        palette = ["#38bdf8", AMBER, RED]
+        for i, comp in enumerate(top_comps):
+            series.append((comp, palette[i % len(palette)], xs, [m.get(comp) for m in sov_maps]))
+        st.plotly_chart(
+            _trend_line("Share of Voice over time (you vs top competitors)", series, ylabel="Share of Voice (%)"),
+            width="stretch", config={"displayModeBar": False},
+        )
+    else:
+        st.caption("Share-of-Voice trend unavailable — this client's history predates SoV capture.")
+
+    # Optional per-query drill-down
+    all_queries: list[str] = []
+    for _, p in runs:
+        for r in (p.get("geo_report") or {}).get("results") or []:
+            q = r.get("query")
+            if q and q not in all_queries:
+                all_queries.append(q)
+    if all_queries:
+        with st.expander("🔎 Per-query drill-down"):
+            q = st.selectbox("Target query", all_queries, key="trend_query")
+            proms, states = [], []
+            for _, p in runs:
+                mentioned, prom = _query_prominence(p, q)
+                proms.append(prom)
+                states.append("mentioned" if mentioned else "absent")
+            figq = go.Figure()
+            figq.add_scatter(
+                x=xs, y=proms, mode="lines+markers", name="Prominence", connectgaps=True,
+                line={"color": ACCENT, "width": 3},
+                marker={"size": 10, "color": [GREEN if s == "mentioned" else RED for s in states]},
+                text=states, hovertemplate="%{x|%d %b %Y}<br>%{text} · prominence %{y:.1f}%<extra></extra>",
+            )
+            figq.update_layout(
+                height=300, title=f"“{q[:60]}” — prominence & mention across runs",
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                font={"color": INK, "family": "Inter"}, margin=dict(l=10, r=10, t=50, b=10),
+                yaxis={"range": [0, 100], "gridcolor": "rgba(255,255,255,0.08)", "title": "Prominence (%)"},
+                xaxis={"gridcolor": "rgba(255,255,255,0.06)"},
+            )
+            st.plotly_chart(figq, width="stretch", config={"displayModeBar": False})
+            st.caption("Green marker = brand mentioned that run; red = absent. Gaps mean the query wasn't in that run.")
+
+
+_render_trends(brand)
 
 
 # ---------------------------------------------------------------------------

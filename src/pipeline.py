@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -70,12 +71,52 @@ def _save_combined_report(combined_report: CombinedReport) -> Path:
     return latest_path
 
 
-def run_pipeline() -> CombinedReport:
-    """Run the SEO and GEO engines and combine their scores."""
-    pipeline_config = load_pipeline_config()
-    seo_config = scoring.load_config()
-    weights = scoring.load_weights()
+def build_audit_configs(
+    brand: str, base_url: str, queries: list[str]
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Build (seo_config, geo_config) for an ad-hoc audit from form inputs.
 
+    Loads the YAML defaults and overrides ONLY the client-specific fields (site name,
+    base URL, brand, queries). All operational settings — crawl limits, factors,
+    openai/web_search/timeouts/caps, reasoning effort — are inherited from config, so
+    nothing client-specific is hardcoded. brand_aliases default to just the brand.
+    """
+    seo_config = scoring.load_config()
+    site = {**seo_config.get("site", {}), "name": brand, "base_url": base_url, "seed_urls": ["/"]}
+    seo_config = {**seo_config, "site": site}
+
+    geo_config = load_geo_config()
+    geo_config = {**geo_config, "brand": brand, "queries": list(queries), "brand_aliases": [brand]}
+    return seo_config, geo_config
+
+
+def run_pipeline(
+    seo_config: dict[str, Any] | None = None,
+    geo_config: dict[str, Any] | None = None,
+    pipeline_config: dict[str, float] | None = None,
+    weights: dict[str, float] | None = None,
+    progress: Callable[[dict], None] | None = None,
+) -> CombinedReport:
+    """Run the SEO and GEO engines and combine their scores.
+
+    Each config defaults to the YAML files (the standard CLI behaviour). Callers (e.g.
+    the dashboard's "New Audit" flow) may pass pre-built configs instead — built by
+    overriding the loaded YAML, so all operational settings (crawl limits, factors,
+    openai/web_search/timeouts/caps) are inherited, not hardcoded. ``progress`` is an
+    optional callback receiving phase/step dicts for live UI updates.
+    """
+    def _emit(event: dict) -> None:
+        if progress is not None:
+            try:
+                progress(event)
+            except Exception:  # a UI callback must never break the run
+                pass
+
+    pipeline_config = pipeline_config if pipeline_config is not None else load_pipeline_config()
+    seo_config = seo_config if seo_config is not None else scoring.load_config()
+    weights = weights if weights is not None else scoring.load_weights()
+
+    _emit({"phase": "crawl", "message": "Crawling site and scoring SEO factors…"})
     pages = scoring.crawl(seo_config)
     # Keep each page's crawled content so draft fixes can be grounded in it.
     page_content = {page.url: extract_page_content(page.html) for page in pages}
@@ -86,12 +127,16 @@ def run_pipeline() -> CombinedReport:
     site_name = seo_config.get("site", {}).get("name", "Unknown Site")
     seo_score = scoring.score_site(reports)
     seo_report = SiteReport(site_name=site_name, pages=reports, score=seo_score)
+    _emit({"phase": "crawl_done", "message": f"Scored {len(reports)} page(s).", "pages": len(reports)})
 
-    geo_config = load_geo_config()
-    geo_report = run_geo(geo_config)
+    geo_config = geo_config if geo_config is not None else load_geo_config()
+    _emit({"phase": "geo_start", "message": "Measuring GEO brand visibility…",
+           "total": len(geo_config.get("queries", []))})
+    geo_report = run_geo(geo_config, progress=progress)
 
     # Rich advisory recommendations — the pipeline is the single source of truth;
     # the dashboard only reads the saved report.
+    _emit({"phase": "recommend", "message": "Building recommendations and draft fixes…"})
     advisory_config = {
         "engine": geo_config.get("engine", "mock"),
         "openai": geo_config.get("openai", {}),
@@ -119,7 +164,10 @@ def run_pipeline() -> CombinedReport:
         geo_recommendations=geo_recommendations,
         geo_assessment=geo_assessment,
     )
+    _emit({"phase": "saving", "message": "Saving report (latest + history) and PDF…"})
     _save_combined_report(combined_report)
+    _emit({"phase": "done", "message": "Audit complete.",
+           "unified_score": unified_score, "seo_score": seo_score, "geo_score": geo_report.geo_score})
     return combined_report
 
 

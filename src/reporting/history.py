@@ -79,3 +79,33 @@ def list_clients(reports_dir: Path | None = None) -> list[str]:
     if not base.exists():
         return []
     return sorted(p.name for p in base.iterdir() if p.is_dir())
+
+
+def parse_timestamp(path: Path | str) -> datetime | None:
+    """Parse the run time from a history filename (YYYY-MM-DDTHH-MM-SSZ[.json])."""
+    stem = Path(path).stem
+    match = re.match(r"(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})Z", stem)
+    if not match:
+        return None
+    y, mo, d, hh, mm, ss = (int(g) for g in match.groups())
+    try:
+        return datetime(y, mo, d, hh, mm, ss, tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def load_reports(client: str, reports_dir: Path | None = None) -> list[tuple[datetime | None, dict]]:
+    """Load every historical report for a client as (run_timestamp, payload).
+
+    Sorted oldest → newest (by filename). Unreadable files are skipped. This is the
+    single entry point a trend view uses — no API calls, no scoring.
+    """
+    runs: list[tuple[datetime | None, dict]] = []
+    for path in list_reports(client, reports_dir):
+        try:
+            with path.open("r", encoding="utf-8") as fh:
+                payload = json.load(fh)
+        except (OSError, json.JSONDecodeError):
+            continue
+        runs.append((parse_timestamp(path), payload))
+    return runs

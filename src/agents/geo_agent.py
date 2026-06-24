@@ -6,6 +6,7 @@ import json
 import logging
 import re
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -349,12 +350,24 @@ def _measurement_input(query: str) -> str:
     )
 
 
-def run_geo(config: dict[str, Any]) -> GeoReport:
-    """Run GEO queries and collect brand visibility data."""
+def run_geo(config: dict[str, Any], progress: Callable[[dict], None] | None = None) -> GeoReport:
+    """Run GEO queries and collect brand visibility data.
+
+    ``progress`` (optional) is called once per query with a dict
+    ``{"phase": "geo", "index", "total", "query", "web_search_used", "error"}`` so a UI
+    can stream per-query status. It must never raise; callback errors are swallowed.
+    """
     brand = config.get("brand", "Unknown Brand")
     engine_type = config.get("engine", "mock")
     queries = config.get("queries", [])
     competitors = config.get("competitors", [])
+
+    def _emit(event: dict) -> None:
+        if progress is not None:
+            try:
+                progress(event)
+            except Exception:  # a UI callback must never break the run
+                pass
 
     openai_cfg = config.get("openai", {})
     openai_mode = openai_cfg.get("mode", "mock")
@@ -418,7 +431,8 @@ def run_geo(config: dict[str, Any]) -> GeoReport:
         return not (text or "").strip()
 
     results: list[GeoQueryResult] = []
-    for query in queries:
+    total = len(queries)
+    for idx, query in enumerate(queries, 1):
         web_search_used = False
         sources: list[dict] = []
         try:
@@ -465,6 +479,10 @@ def run_geo(config: dict[str, Any]) -> GeoReport:
             )
 
         results.append(result)
+        _emit({
+            "phase": "geo", "index": idx, "total": total, "query": query,
+            "web_search_used": result.web_search_used, "error": result.error,
+        })
 
     report = GeoReport(brand=brand, engine=engine_type, results=results, geo_score=0.0)
     # Collapse case/punctuation variants to one display per brand BEFORE aggregating,

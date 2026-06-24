@@ -12,11 +12,10 @@ type Props = {
 // Count-up animation that respects prefers-reduced-motion (jumps straight to the value).
 export function AnimatedNumber({ value, decimals = 1, duration = 1.4 }: Props) {
   const reduce = useReducedMotion();
-  const [display, setDisplay] = useState(reduce ? value : 0);
+  const [display, setDisplay] = useState(0);
 
   useEffect(() => {
     if (reduce) {
-      setDisplay(value);
       return;
     }
     const controls = animate(0, value, {
@@ -27,5 +26,5 @@ export function AnimatedNumber({ value, decimals = 1, duration = 1.4 }: Props) {
     return () => controls.stop();
   }, [value, reduce, duration]);
 
-  return <>{display.toFixed(decimals)}</>;
+  return <>{(reduce ? value : display).toFixed(decimals)}</>;
 }

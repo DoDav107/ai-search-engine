@@ -77,6 +77,7 @@ class CombinedReport:
     seo_report: SiteReport
     geo_report: GeoReport
     brand: str = ""
+    client: str = ""
     seo_recommendations: List["AdvisoryRecommendation"] = field(default_factory=list)
     geo_recommendations: List["AdvisoryRecommendation"] = field(default_factory=list)
     geo_assessment: str = ""

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
@@ -16,6 +17,11 @@ from src.agents.drafting_agent import build_seo_recommendations, extract_page_co
 from src.engine.models import CombinedReport, GeoReport, SiteReport
 from src.engine.recommendations import build_recommendations, _load_recommendation_weights
 from src.engine import scoring
+
+
+def _config_path(env_name: str, default: str) -> str:
+    """Return an override config path from the environment, or the repo default."""
+    return os.environ.get(env_name) or default
 
 
 def load_pipeline_config(path: str = "config/pipeline_config.yaml") -> dict[str, float]:
@@ -52,7 +58,7 @@ def _save_combined_report(combined_report: CombinedReport) -> Path:
 
     # Timestamped, client-scoped history copy (data/reports/history/<client>/<ts>.json).
     # The client name comes from config via the report — never hardcoded.
-    client = combined_report.brand or combined_report.site_name or "unknown"
+    client = combined_report.client or combined_report.brand or combined_report.site_name or "unknown"
     try:
         from src.reporting.history import save_report_history
         hist_path = save_report_history(payload, client)
@@ -72,7 +78,12 @@ def _save_combined_report(combined_report: CombinedReport) -> Path:
 
 
 def build_audit_configs(
-    brand: str, base_url: str, queries: list[str]
+    brand: str,
+    base_url: str,
+    queries: list[str],
+    client: str | None = None,
+    crawl_config_path: str = "config/crawl_config.yaml",
+    geo_config_path: str = "config/geo_config.yaml",
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Build (seo_config, geo_config) for an ad-hoc audit from form inputs.
 
@@ -81,12 +92,18 @@ def build_audit_configs(
     openai/web_search/timeouts/caps, reasoning effort — are inherited from config, so
     nothing client-specific is hardcoded. brand_aliases default to just the brand.
     """
-    seo_config = scoring.load_config()
+    seo_config = scoring.load_config(crawl_config_path)
     site = {**seo_config.get("site", {}), "name": brand, "base_url": base_url, "seed_urls": ["/"]}
     seo_config = {**seo_config, "site": site}
 
-    geo_config = load_geo_config()
-    geo_config = {**geo_config, "brand": brand, "queries": list(queries), "brand_aliases": [brand]}
+    geo_config = load_geo_config(geo_config_path)
+    geo_config = {
+        **geo_config,
+        "client": (client or brand).strip() or brand,
+        "brand": brand,
+        "queries": list(queries),
+        "brand_aliases": [brand],
+    }
     return seo_config, geo_config
 
 
@@ -112,9 +129,15 @@ def run_pipeline(
             except Exception:  # a UI callback must never break the run
                 pass
 
-    pipeline_config = pipeline_config if pipeline_config is not None else load_pipeline_config()
-    seo_config = seo_config if seo_config is not None else scoring.load_config()
-    weights = weights if weights is not None else scoring.load_weights()
+    pipeline_config = pipeline_config if pipeline_config is not None else load_pipeline_config(
+        _config_path("AUDIT_PIPELINE_CONFIG_PATH", "config/pipeline_config.yaml")
+    )
+    seo_config = seo_config if seo_config is not None else scoring.load_config(
+        _config_path("AUDIT_CRAWL_CONFIG_PATH", "config/crawl_config.yaml")
+    )
+    weights = weights if weights is not None else scoring.load_weights(
+        _config_path("AUDIT_SCORING_WEIGHTS_PATH", "config/scoring_weights.yaml")
+    )
 
     _emit({"phase": "crawl", "message": "Crawling site and scoring SEO factors…"})
     pages = scoring.crawl(seo_config)
@@ -129,7 +152,9 @@ def run_pipeline(
     seo_report = SiteReport(site_name=site_name, pages=reports, score=seo_score)
     _emit({"phase": "crawl_done", "message": f"Scored {len(reports)} page(s).", "pages": len(reports)})
 
-    geo_config = geo_config if geo_config is not None else load_geo_config()
+    geo_config = geo_config if geo_config is not None else load_geo_config(
+        _config_path("AUDIT_GEO_CONFIG_PATH", "config/geo_config.yaml")
+    )
     _emit({"phase": "geo_start", "message": "Measuring GEO brand visibility…",
            "total": len(geo_config.get("queries", []))})
     geo_report = run_geo(geo_config, progress=progress)
@@ -160,6 +185,7 @@ def run_pipeline(
         seo_report=seo_report,
         geo_report=geo_report,
         brand=geo_config.get("brand", ""),
+        client=geo_config.get("client", ""),
         seo_recommendations=seo_recommendations,
         geo_recommendations=geo_recommendations,
         geo_assessment=geo_assessment,
@@ -172,7 +198,11 @@ def run_pipeline(
 
 
 def main() -> None:
-    combined_report = run_pipeline()
+    progress = None
+    if os.environ.get("AUDIT_PROGRESS_STDOUT") == "1":
+        progress = lambda event: print(json.dumps(event), flush=True)
+
+    combined_report = run_pipeline(progress=progress)
     print(f"SEO score: {combined_report.seo_score}%")
     print(f"GEO score: {combined_report.geo_score}%")
     print(f"Unified score: {combined_report.unified_score}%")

@@ -52,6 +52,7 @@ export type Report = {
   seo_score?: number;
   geo_score?: number;
   unified_score?: number;
+  client?: string;
   seo_report?: { site_name?: string; score?: number; pages: PageReport[] };
   geo_report?: {
     brand?: string;

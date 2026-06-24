@@ -12,12 +12,17 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 
 def _load_openai_config() -> dict:
-    config_path = Path(__file__).resolve().parents[2] / "config" / "geo_config.yaml"
+    override = os.environ.get("AUDIT_GEO_CONFIG_PATH")
+    config_path = Path(override) if override else REPO_ROOT / "config" / "geo_config.yaml"
+    if not config_path.is_absolute():
+        config_path = REPO_ROOT / config_path
     with config_path.open("r", encoding="utf-8") as fh:
         data = yaml.safe_load(fh) or {}
     return data.get("openai", {})

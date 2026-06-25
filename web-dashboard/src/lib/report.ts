@@ -13,6 +13,7 @@ export type PageReport = {
   url: string;
   factors: FactorResult[];
   score: number;
+  error?: string | null;
 };
 
 export type GeoResult = {
@@ -24,6 +25,21 @@ export type GeoResult = {
   mention_count: number;
   first_position: number | null;
   competitors_found: string[];
+  // Which AI engine/model produced this answer (optional — absent on older reports).
+  provider?: string;
+  model?: string;
+};
+
+// Per engine/model GEO breakdown. Visibility differs across ChatGPT, Claude, etc.
+export type EngineScore = {
+  provider: string;
+  model: string;
+  geo_score: number;
+  visibility_rate: number; // 0..1
+  queries_run: number;
+  brand_mentions?: number;
+  avg_prominence?: number;
+  error?: string | null;
 };
 
 export type ShareOfVoice = {
@@ -62,6 +78,7 @@ export type Report = {
     competitors_summary?: { name: string; query_count: number }[];
     share_of_voice?: ShareOfVoice[];
     sov_headline?: string;
+    engine_scores?: EngineScore[];
   };
   seo_recommendations?: Recommendation[];
   geo_recommendations?: Recommendation[];
@@ -118,6 +135,11 @@ const FACTOR_LABELS: Record<string, string> = {
   image_alt: "Image ALT",
   word_count: "Word count",
   structured_data: "Structured data",
+  crawl_access: "Crawl access",
+  audit_coverage: "Audit coverage",
+  https_enabled: "HTTPS",
+  domain_brand_signal: "Brand/domain signal",
+  canonical_url_shape: "Canonical URL shape",
 };
 
 export function factorLabel(id: string): string {

@@ -4,13 +4,76 @@ import { useMemo, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ChevronDown, Check, X, CircleSlash } from "lucide-react";
 import {
+  band,
   GLASS,
   isNoAnswer,
   prominence,
+  type EngineScore,
   type GeoResult,
   type Report,
 } from "@/lib/report";
 import { Section, sectionItem } from "./section";
+
+// "AI Engine / Model GEO Breakdown" — visibility tracked separately per engine/model.
+// Backward compatible: with no engine_scores, falls back to a single "—/—" row built
+// from the overall GEO score so older reports still render.
+function EngineBreakdown({ engines, overall }: { engines: EngineScore[]; overall: number }) {
+  const rows: EngineScore[] =
+    engines.length > 0
+      ? engines
+      : [{ provider: "—", model: "—", geo_score: overall, visibility_rate: NaN, queries_run: 0 }];
+
+  const stat = (label: string, value: string, color?: string) => (
+    <div className="text-right">
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="font-mono text-sm tabular-nums" style={color ? { color } : undefined}>
+        {value}
+      </div>
+    </div>
+  );
+
+  return (
+    <motion.div variants={sectionItem} className={`${GLASS} mt-6 overflow-hidden`}>
+      <div className="px-5 pt-5 sm:px-6">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          AI Engine / Model GEO Breakdown
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Visibility can differ across ChatGPT, Claude, Perplexity… Overall is the average of enabled engines.
+        </p>
+      </div>
+      <div className="mt-3">
+        {rows.map((e, i) => {
+          const score = e.geo_score ?? 0;
+          const vis = Number.isFinite(e.visibility_rate)
+            ? `${(Math.round(e.visibility_rate * 1000) / 10).toFixed(1)}%`
+            : "N/A";
+          return (
+            <div
+              key={`${e.provider}-${e.model}-${i}`}
+              className="flex flex-wrap items-center justify-between gap-4 border-t border-white/10 px-5 py-3 sm:px-6"
+            >
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-foreground">{e.provider}</div>
+                <div className="truncate font-mono text-xs text-muted-foreground" title={e.model}>
+                  {e.model}
+                </div>
+              </div>
+              <div className="flex items-center gap-6">
+                {stat("GEO score", `${score.toFixed(1)}%`, band(score).color)}
+                {stat("Visibility", vis)}
+                {stat("Queries", String(e.queries_run ?? 0))}
+              </div>
+              {e.error ? (
+                <p className="w-full text-xs text-warning">⚠ {e.error}</p>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </motion.div>
+  );
+}
 
 function MentionIndicator({ r }: { r: GeoResult }) {
   if (isNoAnswer(r)) {
@@ -76,8 +139,13 @@ function QueryRow({ r }: { r: GeoResult }) {
         aria-expanded={open}
         className="grid w-full cursor-pointer grid-cols-[1fr_auto] items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-white/[0.06] sm:grid-cols-[minmax(0,2fr)_140px_minmax(0,1.3fr)_auto]"
       >
-        <span className="truncate text-sm text-foreground/90" title={r.query}>
+        <span className="min-w-0 truncate text-sm text-foreground/90" title={r.query}>
           {r.query}
+          {r.model ? (
+            <span className="block truncate font-mono text-[10px] text-muted-foreground">
+              {[r.provider, r.model].filter(Boolean).join(" / ")}
+            </span>
+          ) : null}
         </span>
         <span className="hidden sm:block">
           <MentionIndicator r={r} />
@@ -108,6 +176,14 @@ function QueryRow({ r }: { r: GeoResult }) {
               <div className="sm:hidden">
                 <MentionIndicator r={r} />
               </div>
+              {(r.provider || r.model) && (
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="uppercase tracking-wide text-muted-foreground">Engine:</span>
+                  <span className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-0.5 font-mono">
+                    {[r.provider, r.model].filter(Boolean).join(" / ")}
+                  </span>
+                </div>
+              )}
               {noAnswer ? (
                 <p className="rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-foreground/90">
                   This query returned no answer{r.error ? ` (${r.error})` : ""} — excluded
@@ -153,7 +229,7 @@ function QueryRow({ r }: { r: GeoResult }) {
 
 export function GeoSection({ report }: { report: Report }) {
   const reduce = useReducedMotion();
-  const results = report.geo_report?.results ?? [];
+  const results = useMemo(() => report.geo_report?.results ?? [], [report.geo_report?.results]);
   const brand = report.geo_report?.brand ?? report.brand ?? "Subject";
   const sov = report.geo_report?.share_of_voice ?? [];
   const sovHeadline = report.geo_report?.sov_headline ?? "";
@@ -174,6 +250,11 @@ export function GeoSection({ report }: { report: Report }) {
       title="GEO Report"
       subtitle="How often AI engines surface the brand for target queries"
     >
+      {results.length === 0 && (
+        <motion.div variants={sectionItem} className={`${GLASS} mb-6 p-5 text-sm text-muted-foreground sm:p-6`}>
+          No GEO query results are stored in this report yet. Run a new audit from the dashboard.
+        </motion.div>
+      )}
       {/* Summary row */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
         <motion.div variants={sectionItem} className={`${GLASS} p-5 sm:p-6`}>
@@ -220,6 +301,9 @@ export function GeoSection({ report }: { report: Report }) {
           </motion.div>
         )}
       </div>
+
+      {/* AI Engine / Model GEO Breakdown */}
+      <EngineBreakdown engines={report.geo_report?.engine_scores ?? []} overall={geoScore} />
 
       {/* Share of Voice — ranked brands (subject + competitors) by presence */}
       {sov.length > 0 && (() => {

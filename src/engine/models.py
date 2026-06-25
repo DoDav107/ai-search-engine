@@ -17,6 +17,7 @@ class PageReport:
     url: str
     factors: List[FactorResult]
     score: float
+    error: str | None = None
 
 
 @dataclass
@@ -49,6 +50,33 @@ class GeoQueryResult:
     web_search_used: bool = False
     # url_citation annotations returned by the measurement call: [{"url","title"}].
     sources: List[dict] = field(default_factory=list)
+    # Which AI engine/model produced this answer (e.g. "openai" / "gpt-5.5").
+    # Visibility differs across ChatGPT, Claude, Perplexity, etc.
+    provider: str = ""
+    model: str = ""
+    # Prominence (0..1) of the brand's first mention in the answer; None if absent/error.
+    prominence_score: float | None = None
+
+    # ----- GEO quality signals (rule-based; see geo_agent.analyze_quality_signals) -----
+    # Sentiment of the brand mention.
+    sentiment_label: str = "unknown"          # positive | neutral | negative | unknown
+    sentiment_score: float = 0.0              # -1.0 .. 1.0
+    # How strongly the answer recommends the brand.
+    recommendation_strength: str = "unknown"  # strong | moderate | weak | none | unknown
+    recommendation_score: float = 0.0         # 0.0 .. 1.0
+    # Estimated rank of the brand among listed options (1-based); None if not inferable.
+    brand_rank_position: int | None = None
+    # Competitors surfaced alongside the brand (mirrors competitors_found).
+    competitor_count: int = 0
+    competitor_names_mentioned: List[str] = field(default_factory=list)
+    # Citations / source links detected in the answer (or returned via `sources`).
+    citation_count: int = 0
+    citations_present: bool = False
+    # Whether the answer is accurate about the brand (placeholder; not LLM-evaluated yet).
+    answer_accuracy_label: str = "unknown"    # accurate | partially_accurate | inaccurate | unknown
+    answer_accuracy_notes: str | None = None
+    # Richer per-query GEO score (0..100) combining the signals above; None if errored.
+    per_query_geo_score: float | None = None
 
 
 @dataclass
@@ -66,6 +94,12 @@ class GeoReport:
     share_of_voice: List[dict] = field(default_factory=list)
     # Punchy headline, e.g. "Nike ranks 1st of 12 brands by Share of Voice".
     sov_headline: str = ""
+    # Per engine/model GEO breakdown — brand visibility differs across AI engines:
+    # [{"provider": "openai", "model": "gpt-5.5", "geo_score": 61.2,
+    #   "visibility_rate": 0.83, "queries_run": 8, "brand_mentions": 7,
+    #   "avg_prominence": 0.74, "error": null}, ...]. overall geo_score is the
+    # average of the per-engine scores.
+    engine_scores: List[dict] = field(default_factory=list)
 
 
 @dataclass

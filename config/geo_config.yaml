@@ -9,6 +9,31 @@ brand_aliases:
   - "Jordan Brand"
   - "Converse"
 competitors: []
+
+# AI engines/models to measure GEO visibility against. Brand visibility differs across
+# ChatGPT, Claude, Perplexity, etc., so each enabled engine is run separately and gets
+# its own GEO score; the overall GEO score is the average of the enabled engines.
+# Only "mock" (offline) and "openai" (live, web search) are implemented today;
+# "anthropic"/"perplexity" are placeholders — leave them disabled until a client + API
+# key exist (an enabled-but-unimplemented engine fails loudly with a clear message).
+# Operational params for the openai provider (tokens/timeout/reasoning/web search) come
+# from the `openai:` and `web_search:` blocks below.
+# If this `engines` list is omitted, the tool falls back to the legacy single-engine
+# behaviour derived from `engine` / `openai.mode` below (backward compatible).
+engines:
+  - provider: "mock"
+    model: "mock-default"
+    enabled: true
+  - provider: "openai"
+    model: "gpt-4o-mini"
+    enabled: false
+  - provider: "anthropic"
+    model: "claude-sonnet"
+    enabled: false
+  - provider: "perplexity"
+    model: "sonar"
+    enabled: false
+
 queries:
   - "What are the best running shoe brands?"
   - "Best athletic wear companies?"
@@ -70,3 +95,19 @@ competitor_extraction:
   enabled: true
   model: gpt-4o-mini
   max_completion_tokens: 300
+
+# GEO quality scoring — how much each signal contributes to the per-query GEO score
+# (0..100). The score is an explainable weighted average of six 0..1 components; tune
+# these freely (they're normalized, so they need not sum to 1.0). A brand that is not
+# mentioned scores 0 (visibility gates the quality signals).
+scoring:
+  visibility_weight: 0.35        # brand mentioned at all
+  prominence_weight: 0.20        # how early the brand appears in the answer
+  sentiment_weight: 0.15         # positive vs negative tone near the brand
+  recommendation_weight: 0.15    # recommended/top option vs merely named
+  citation_weight: 0.10          # answer includes source links
+  accuracy_weight: 0.05          # answer is accurate about the brand (placeholder)
+  accuracy_unknown_score: 0.5    # neutral value used while accuracy is not LLM-evaluated
+  # Optional: if the brand is mentioned AND any of these terms appear in the answer,
+  # accuracy is marked "accurate"; otherwise "unknown" (never guessed "inaccurate").
+  accuracy_keywords: []

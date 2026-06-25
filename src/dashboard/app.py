@@ -1,9 +1,8 @@
-"""Streamlit dashboard for visualising SEO/GEO audit reports.
+"""Streamlit dashboard for running and visualising SEO/GEO audit reports.
 
-Strictly read-only: it renders the report produced by `python -m src.pipeline`
-(`data/reports/latest_report.json`) and never runs drafting or makes any live
-API calls on render. All field access is defensive so a partial report still
-renders cleanly.
+Rendering is read-only: it displays `data/reports/latest_report.json` and never
+makes live API calls on page load. The sidebar's New Audit form is the explicit
+entry point for running the pipeline.
 """
 
 from __future__ import annotations
@@ -62,6 +61,11 @@ _FACTOR_LABEL: dict[str, str] = {
     "image_alt": "Image alt text",
     "word_count": "Word count",
     "structured_data": "Structured data",
+    "crawl_access": "Crawl access",
+    "audit_coverage": "Audit coverage",
+    "https_enabled": "HTTPS",
+    "domain_brand_signal": "Brand/domain signal",
+    "canonical_url_shape": "Canonical URL shape",
 }
 
 
@@ -443,14 +447,19 @@ def _normalize_audit_url(url: str) -> str:
     return url
 
 
-def _validate_audit(brand: str, url: str, queries_raw: str) -> tuple[str, str, list[str], list[str]]:
-    """Return (brand, normalized_url, queries, errors). Never raises."""
+def _validate_audit(
+    client: str, brand: str, url: str, queries_raw: str
+) -> tuple[str, str, str, list[str], list[str]]:
+    """Return (client, brand, normalized_url, queries, errors). Never raises."""
     from urllib.parse import urlparse
 
     errors: list[str] = []
+    client = (client or "").strip()
     brand = (brand or "").strip()
     url = _normalize_audit_url(url)
     queries = [q.strip() for q in (queries_raw or "").splitlines() if q.strip()]
+    if not client:
+        errors.append("Client is required.")
     if not brand:
         errors.append("Brand / company name is required.")
     parsed = urlparse(url)
@@ -460,7 +469,7 @@ def _validate_audit(brand: str, url: str, queries_raw: str) -> tuple[str, str, l
         errors.append("Add at least one target query (one per line).")
     if len(queries) > MAX_QUERIES:
         errors.append(f"Too many queries ({len(queries)}). The cap is {MAX_QUERIES} — remove some.")
-    return brand, url, queries, errors
+    return client, brand, url, queries, errors
 
 
 # Sidebar form — rendered first so it's available even before any report exists.
@@ -470,6 +479,7 @@ with st.sidebar:
             "Run a fresh audit on your own brand and domain. Diagnose-and-recommend only — "
             "it never publishes or changes your site."
         )
+        na_client = st.text_input("Client", key="na_client", placeholder="e.g. Acme Retail")
         na_brand = st.text_input("Brand / company name", key="na_brand", placeholder="e.g. Acme Running")
         na_url = st.text_input("Website URL", key="na_url", placeholder="https://example.com")
         na_queries = st.text_area(
@@ -482,14 +492,14 @@ with st.sidebar:
             "I understand this crawls the site and makes live, paid AI calls.", key="na_confirm"
         )
         if st.button("Run Audit", type="primary", width="stretch", key="na_run"):
-            _b, _u, _qs, _errs = _validate_audit(na_brand, na_url, na_queries)
+            _c, _b, _u, _qs, _errs = _validate_audit(na_client, na_brand, na_url, na_queries)
             if not na_confirm:
                 _errs.append("Tick the confirmation box before running.")
             if _errs:
                 for _e in _errs:
                     st.error(_e)
             else:
-                st.session_state["pending_audit"] = {"brand": _b, "url": _u, "queries": _qs}
+                st.session_state["pending_audit"] = {"client": _c, "brand": _b, "url": _u, "queries": _qs}
                 st.rerun()
 
 
@@ -499,7 +509,10 @@ if _pending:
     import time as _time
 
     st.markdown("## 🚀 Running New Audit")
-    st.caption(f"{_pending['brand']} — {_pending['url']} · {len(_pending['queries'])} query(ies)")
+    st.caption(
+        f"{_pending.get('client') or _pending['brand']} · {_pending['brand']} — "
+        f"{_pending['url']} · {len(_pending['queries'])} query(ies)"
+    )
     _status = st.status("Starting…", expanded=True)
     _log = st.empty()
     _start = _time.time()
@@ -533,7 +546,12 @@ if _pending:
     try:
         from src.pipeline import build_audit_configs, run_pipeline
 
-        _seo_cfg, _geo_cfg = build_audit_configs(_pending["brand"], _pending["url"], _pending["queries"])
+        _seo_cfg, _geo_cfg = build_audit_configs(
+            client=_pending.get("client") or _pending["brand"],
+            brand=_pending["brand"],
+            base_url=_pending["url"],
+            queries=_pending["queries"],
+        )
         run_pipeline(seo_config=_seo_cfg, geo_config=_geo_cfg, progress=_audit_progress)
         _status.update(label="Audit complete — loading report…", state="complete")
         st.session_state.pop("pending_audit", None)
@@ -547,7 +565,7 @@ if _pending:
 
 
 if not report_path.exists():
-    st.info("No report yet — start one from the **🚀 New Audit** panel in the sidebar, or run `python -m src.pipeline`.")
+    st.info("No report yet — start one from the **🚀 New Audit** panel in the sidebar.")
     st.stop()
 
 combined: dict = _load_json(str(report_path), report_path.stat().st_mtime) or {}
@@ -574,7 +592,7 @@ skipped_pages = [p for p in pages if not p.get("factors")]
 # ---------------------------------------------------------------------------
 with st.sidebar:
     st.markdown(f"### ✦ {brand or 'Audit'} ")
-    st.caption("SEO & GEO intelligence dashboard")
+    st.caption("SEO & GEO intelligence dashboard · use New Audit above to refresh this report")
     if st.button("🔄 Refresh data", width="stretch"):
         st.cache_data.clear()
         st.rerun()
@@ -644,7 +662,7 @@ with st.sidebar:
         )
 
     st.divider()
-    st.caption("Read-only. Reflects the last `python -m src.pipeline` run — no live API calls.")
+    st.caption("Read-only on page load. Use New Audit above when you want to run the pipeline.")
 
 
 # ---------------------------------------------------------------------------
@@ -717,7 +735,7 @@ st.markdown(
         <div class="gcard">
             <div class="label">Pages Scored</div>
             <div class="value">{len(scored_pages)}</div>
-            <div class="foot">{len(skipped_pages)} skipped (no factor data)</div>
+            <div class="foot">{len(pages)} page(s) crawled</div>
         </div>
         <div class="gcard">
             <div class="label">Brand Visibility</div>
@@ -1039,16 +1057,96 @@ if scored_pages:
                 )
 
     if skipped_pages:
-        urls_str = "; ".join(_fix_mojibake(p.get("url", "")) for p in skipped_pages)
-        st.caption(f"{len(skipped_pages)} page(s) not scored (no factor data): {urls_str}")
+        st.caption(f"{len(skipped_pages)} crawled page(s) were not scoreable.")
 else:
-    st.info("No SEO data available — run `python -m src.pipeline`.")
+    if skipped_pages:
+        st.info(
+            "The audit ran, but no scoreable SEO pages were returned for this site. "
+            "Try a different domain path or run New Audit again later."
+        )
+    else:
+        st.info("No SEO page data is stored in this report yet — run **New Audit** from the sidebar.")
 
 
 # ---------------------------------------------------------------------------
 # GEO Report
 # ---------------------------------------------------------------------------
 st.markdown("## 🤖 GEO Report")
+
+# AI engine / model breakdown — brand visibility differs across ChatGPT, Claude,
+# Perplexity, etc. Each enabled engine is scored separately; overall = their average.
+engine_scores = geo.get("engine_scores") or []
+if engine_scores:
+    st.markdown("#### AI Engine / Model GEO Breakdown")
+    breakdown_rows = [
+        {
+            "Provider": e.get("provider", ""),
+            "Model": e.get("model", ""),
+            "GEO score": float(e.get("geo_score") or 0.0),
+            "Visibility": round((e.get("visibility_rate") or 0.0) * 100, 1),
+            "Queries run": int(e.get("queries_run") or 0),
+            "Brand mentions": int(e.get("brand_mentions") or 0),
+            "Avg prominence": round((e.get("avg_prominence") or 0.0) * 100, 1),
+        }
+        for e in engine_scores
+    ]
+    st.dataframe(
+        pd.DataFrame(breakdown_rows),
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "GEO score": st.column_config.NumberColumn("GEO score", format="%.1f%%"),
+            "Visibility": st.column_config.NumberColumn("Visibility", format="%.1f%%"),
+            "Avg prominence": st.column_config.NumberColumn("Avg prominence", format="%.1f%%"),
+        },
+    )
+    ran = [e for e in engine_scores if not e.get("error") and e.get("queries_run")]
+    if len(ran) > 1:
+        st.caption(f"Overall GEO score = average of {len(ran)} enabled engine(s).")
+    for e in (e for e in engine_scores if e.get("error")):
+        st.caption(f"⚠️ {e.get('provider')}/{e.get('model')} not run: {e.get('error')}")
+
+# GEO Quality Signals — beyond "is the brand mentioned": how it's mentioned.
+# Shown only when the report carries quality signals (older reports skip this cleanly).
+_quality_rows = [r for r in measured if r.get("per_query_geo_score") is not None]
+if _quality_rows:
+    st.markdown("#### GEO Quality Signals")
+    _mentioned = [r for r in _quality_rows if r.get("brand_mentioned")]
+    _sents = [float(r.get("sentiment_score") or 0.0) for r in _mentioned]
+    _avg_sent = (sum(_sents) / len(_sents)) if _sents else None
+    _pos = sum(1 for r in _mentioned if r.get("sentiment_label") == "positive")
+    _neu = sum(1 for r in _mentioned if r.get("sentiment_label") == "neutral")
+    _neg = sum(1 for r in _mentioned if r.get("sentiment_label") == "negative")
+    _recs = [float(r.get("recommendation_score") or 0.0) for r in _mentioned]
+    _avg_rec = (sum(_recs) / len(_recs) * 100) if _recs else None
+    _cite_cov = sum(1 for r in _quality_rows if r.get("citations_present")) / len(_quality_rows) * 100
+    _comp_total = sum(int(r.get("competitor_count") or 0) for r in _quality_rows)
+    _ranks = [r.get("brand_rank_position") for r in _quality_rows if r.get("brand_rank_position")]
+    _avg_rank = (sum(_ranks) / len(_ranks)) if _ranks else None
+
+    qc = st.columns(5)
+    qc[0].metric("Avg sentiment", f"{_avg_sent:+.2f}" if _avg_sent is not None else "N/A")
+    qc[1].metric("Avg recommendation", f"{_avg_rec:.0f}%" if _avg_rec is not None else "N/A")
+    qc[2].metric("Citation coverage", f"{_cite_cov:.0f}%")
+    qc[3].metric("Competitor mentions", _comp_total)
+    qc[4].metric("Avg brand rank", f"#{_avg_rank:.1f}" if _avg_rank is not None else "N/A")
+    st.caption(
+        f"Sentiment of {len(_mentioned)} brand mention(s): "
+        f"🟢 {_pos} positive · ⚪ {_neu} neutral · 🔴 {_neg} negative."
+    )
+
+    # Lightweight, deterministic improvement tips derived from the signals.
+    _tips: list[str] = []
+    if _mentioned and _avg_sent is not None and _avg_sent <= 0.15:
+        _tips.append("Improve brand positioning content so AI answers describe the brand more positively.")
+    if _cite_cov < 50:
+        _tips.append("Add clearer sourceable content and structured data to improve citation likelihood.")
+    if _mentioned and _comp_total > len(_mentioned):
+        _tips.append("Create comparison / use-case pages to improve share of voice vs competitors.")
+    if _avg_rank is not None and _avg_rank > 2:
+        _tips.append("Strengthen topical authority around these query themes where competitors appear first.")
+    for _t in _tips[:3]:
+        st.caption(f"💡 {_t}")
 
 if geo_results:
     gcol1, gcol2 = st.columns([1, 2])
@@ -1161,16 +1259,33 @@ if geo_results:
         icon = "✅" if hit else "❌"
         prom = _prominence(r)
         prom_txt = f" · prominence {prom:.1f}%" if prom is not None else ""
-        with st.expander(f"{icon}  {q}{prom_txt}"):
+        pm = "/".join(p for p in [r.get("provider"), r.get("model")] if p)
+        pm_label = f"  ·  `{pm}`" if pm else ""
+        with st.expander(f"{icon}  {q}{prom_txt}{pm_label}"):
             mc = r.get("mention_count")
             fp = r.get("first_position")
             meta_bits = []
+            if pm:
+                meta_bits.append(f"Engine: **{pm}**")
             meta_bits.append(f"Brand mentioned: **{'yes' if hit else 'no'}**")
             if mc is not None:
                 meta_bits.append(f"Mentions: **{mc}**")
             if fp is not None:
                 meta_bits.append(f"First position: **{fp}**")
             st.markdown(" · ".join(meta_bits))
+
+            # GEO quality signals (defaults keep older reports rendering cleanly).
+            if r.get("per_query_geo_score") is not None or r.get("sentiment_label", "unknown") != "unknown":
+                rank = r.get("brand_rank_position")
+                pqs = r.get("per_query_geo_score")
+                quality_bits = [
+                    f"Sentiment: **{r.get('sentiment_label', 'unknown')}**",
+                    f"Recommendation: **{r.get('recommendation_strength', 'unknown')}**",
+                    f"Brand rank: **{('#' + str(rank)) if rank else 'N/A'}**",
+                    f"Citations: **{'yes' if r.get('citations_present') else 'no'}**",
+                    f"Quality score: **{pqs:.1f}%**" if pqs is not None else "Quality score: **N/A**",
+                ]
+                st.markdown(" · ".join(quality_bits))
 
             comps = r.get("competitors_found") or []
             if comps:
@@ -1193,7 +1308,7 @@ if geo_results:
             else:
                 st.caption("No answer text recorded.")
 else:
-    st.info("No GEO data available — run `python -m src.pipeline`.")
+    st.info("No GEO query results are stored in this report yet — run **New Audit** from the sidebar.")
 
 
 # ---------------------------------------------------------------------------
@@ -1201,7 +1316,7 @@ else:
 # ---------------------------------------------------------------------------
 def _render_recs(recs: list[dict], key_prefix: str) -> None:
     if not recs:
-        st.info("No recommendations in the report — run `python -m src.pipeline`.")
+        st.info("No recommendations are stored in this report yet — run **New Audit** from the sidebar.")
         return
 
     fc1, fc2 = st.columns([1, 1])

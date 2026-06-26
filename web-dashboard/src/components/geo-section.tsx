@@ -8,6 +8,7 @@ import {
   GLASS,
   isNoAnswer,
   prominence,
+  type EngineQuality,
   type EngineScore,
   type GeoResult,
   type Report,
@@ -157,32 +158,150 @@ function ProminenceBar({ value }: { value: number }) {
   );
 }
 
-function QualityMetric({ label, value }: { label: string; value: string }) {
+function QualityMetric({ label, value, note }: { label: string; value: string; note?: string }) {
   return (
     <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className="mt-1 font-mono text-lg tabular-nums">{value}</div>
+      {note && <div className="mt-0.5 text-[10px] text-muted-foreground/80">{note}</div>}
     </div>
   );
 }
 
-// "GEO Quality Signals" — beyond mention/no-mention: how the brand is mentioned.
-// Rendered only when the report carries quality signals (older reports skip cleanly).
-function QualitySignals({ measured }: { measured: GeoResult[] }) {
+// Backward compat: build a quality block from old per-query rows (no stored `quality`).
+// Competitor names weren't ranked in old reports, so the breakdown/leaders stay empty.
+function legacyQuality(measured: GeoResult[]): EngineQuality | null {
   const rows = measured.filter((r) => r.per_query_geo_score != null);
   if (rows.length === 0) return null;
-
-  const mentioned = rows.filter((r) => r.brand_mentioned);
+  const men = rows.filter((r) => r.brand_mentioned);
   const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
-  const avgSent = avg(mentioned.map((r) => r.sentiment_score ?? 0));
-  const pos = mentioned.filter((r) => r.sentiment_label === "positive").length;
-  const neu = mentioned.filter((r) => r.sentiment_label === "neutral").length;
-  const neg = mentioned.filter((r) => r.sentiment_label === "negative").length;
-  const avgRec = avg(mentioned.map((r) => r.recommendation_score ?? 0));
-  const citeCov = (rows.filter((r) => r.citations_present).length / rows.length) * 100;
-  const compTotal = rows.reduce((a, r) => a + (r.competitor_count ?? 0), 0);
-  const ranks = rows.map((r) => r.brand_rank_position).filter((v): v is number => typeof v === "number");
-  const avgRank = ranks.length ? avg(ranks) : null;
+  const ranks = men.map((r) => r.brand_rank_position).filter((v): v is number => typeof v === "number");
+  const cites = rows.filter((r) => r.citations_present).length;
+  return {
+    answers_total: rows.length,
+    brand_mentions: men.length,
+    sov: rows.length ? men.length / rows.length : 0,
+    sentiment: {
+      avg: avg(men.map((r) => r.sentiment_score ?? 0)),
+      positive: men.filter((r) => r.sentiment_label === "positive").length,
+      neutral: men.filter((r) => r.sentiment_label === "neutral").length,
+      negative: men.filter((r) => r.sentiment_label === "negative").length,
+    },
+    recommendation: { avg: avg(men.map((r) => r.recommendation_score ?? 0)) },
+    avg_brand_rank: ranks.length ? avg(ranks) : null,
+    citations_answers: cites,
+    citation_coverage: rows.length ? cites / rows.length : 0,
+    competitor_total: rows.reduce((a, r) => a + (r.competitor_count ?? 0), 0),
+    top_competitors: [],
+    competitor_leaders: [],
+  };
+}
+
+// One engine's quality block, rendered with EXPLICIT denominators (see Python
+// build_engine_quality — same math/labels on both dashboards).
+function QualityBlockCard({ q, label }: { q: EngineQuality; label?: string }) {
+  const nAll = q.answers_total ?? 0;
+  const nMen = q.brand_mentions ?? 0;
+  const avgSent = q.sentiment?.avg ?? null;
+  const avgRec = q.recommendation?.avg ?? null;
+  const avgRank = q.avg_brand_rank ?? null;
+  const citeCov = (q.citation_coverage ?? 0) * 100;
+  const top = q.top_competitors ?? [];
+  const leaders = q.competitor_leaders ?? [];
+  const brandNote = nMen === 0 ? "brand not mentioned" : "of brand mentions";
+  const allNote = `across all ${nAll} answers`;
+
+  return (
+    <div className={label ? "border-t border-white/10 pt-5 first:border-t-0 first:pt-0" : ""}>
+      {label && <p className="text-sm font-medium text-foreground">{label}</p>}
+      <p className="mt-1 text-xs text-muted-foreground">
+        Share of Voice:{" "}
+        <span className="font-semibold text-foreground">{Math.round((q.sov ?? 0) * 100)}%</span> — brand
+        mentioned in {nMen} of {nAll} answers.
+      </p>
+      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <QualityMetric label="Avg sentiment" value={nMen === 0 || avgSent === null ? "N/A" : `${avgSent >= 0 ? "+" : ""}${avgSent.toFixed(2)}`} note={brandNote} />
+        <QualityMetric label="Avg recommendation" value={nMen === 0 || avgRec === null ? "N/A" : `${Math.round(avgRec * 100)}%`} note={brandNote} />
+        <QualityMetric label="Citation coverage" value={`${Math.round(citeCov)}%`} note={allNote} />
+        <QualityMetric label="Competitor mentions" value={String(q.competitor_total ?? 0)} note={allNote} />
+        <QualityMetric label="Avg brand rank" value={nMen === 0 || avgRank === null ? "N/A" : `#${avgRank.toFixed(1)}`} note={brandNote} />
+      </div>
+      {nMen > 0 ? (
+        <p className="mt-3 text-xs text-muted-foreground">
+          Sentiment of {nMen} brand mention(s):{" "}
+          <span className="text-success">🟢 {q.sentiment.positive} positive</span> ·{" "}
+          <span>⚪ {q.sentiment.neutral} neutral</span> ·{" "}
+          <span className="text-danger">🔴 {q.sentiment.negative} negative</span>.
+        </p>
+      ) : (
+        <p className="mt-3 text-xs text-muted-foreground">
+          🔴 <span className="font-medium text-foreground">N/A — brand not mentioned</span> in any of the{" "}
+          {nAll} answers for this engine.
+        </p>
+      )}
+      {top.length > 0 && (
+        <div className="mt-3">
+          <p className="text-xs text-muted-foreground">Top competitors across all {nAll} answers (by # answers mentioning):</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {top.map((c) => (
+              <span key={c.name} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs">
+                {c.name} <span className="tabular-nums text-muted-foreground">{c.count}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {nMen === 0 && leaders.length > 0 && (
+        <div className="mt-4">
+          <p className="text-xs text-muted-foreground">
+            Brand absent — <span className="font-medium text-foreground">who won these answers and how strongly</span>:
+          </p>
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="text-muted-foreground">
+                <tr className="text-left">
+                  <th className="py-1 pr-4 font-medium">Competitor</th>
+                  <th className="py-1 pr-4 font-medium">Mentions</th>
+                  <th className="py-1 pr-4 font-medium">Sentiment</th>
+                  <th className="py-1 pr-4 font-medium">Recommendation</th>
+                  <th className="py-1 font-medium">Best rank</th>
+                </tr>
+              </thead>
+              <tbody>
+                {leaders.map((d) => (
+                  <tr key={d.name} className="border-t border-white/10">
+                    <td className="py-1 pr-4 text-foreground/90">{d.name}</td>
+                    <td className="py-1 pr-4 tabular-nums">{d.mentions}</td>
+                    <td className="py-1 pr-4">{d.sentiment_label}</td>
+                    <td className="py-1 pr-4">{d.recommendation_strength}</td>
+                    <td className="py-1 tabular-nums">{d.rank ? `#${d.rank}` : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// "GEO Quality Signals" — per engine, beyond mention/no-mention: HOW the brand is
+// mentioned, with consistent denominators. Falls back to a single legacy block for
+// older reports without a stored per-engine `quality` block.
+function QualitySignals({ engines, measured }: { engines: EngineScore[]; measured: GeoResult[] }) {
+  const qEngines = engines.filter((e) => e.quality);
+  let blocks: { label?: string; q: EngineQuality }[];
+  if (qEngines.length > 0) {
+    const multi = qEngines.length > 1;
+    blocks = [...qEngines]
+      .sort((a, b) => (a.provider + a.model).localeCompare(b.provider + b.model))
+      .map((e) => ({ label: multi ? `${e.provider} / ${e.model}` : undefined, q: e.quality as EngineQuality }));
+  } else {
+    const legacy = legacyQuality(measured);
+    blocks = legacy ? [{ q: legacy }] : [];
+  }
+  if (blocks.length === 0) return null;
 
   return (
     <motion.div variants={sectionItem} className={`${GLASS} mt-6 p-5 sm:p-6`}>
@@ -190,20 +309,15 @@ function QualitySignals({ measured }: { measured: GeoResult[] }) {
         GEO Quality Signals
       </p>
       <p className="mt-1 text-xs text-muted-foreground">
-        Not just whether the brand is mentioned, but how — sentiment, recommendation, citations, rank.
+        Brand-mention metrics (sentiment · recommendation · rank) are over answers that{" "}
+        <span className="text-foreground/90">mention the brand</span>; citation coverage and competitor
+        mentions are over <span className="text-foreground/90">all answers</span>.
       </p>
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <QualityMetric label="Avg sentiment" value={avgSent === null ? "N/A" : `${avgSent >= 0 ? "+" : ""}${avgSent.toFixed(2)}`} />
-        <QualityMetric label="Avg recommendation" value={avgRec === null ? "N/A" : `${Math.round(avgRec * 100)}%`} />
-        <QualityMetric label="Citation coverage" value={`${Math.round(citeCov)}%`} />
-        <QualityMetric label="Competitor mentions" value={String(compTotal)} />
-        <QualityMetric label="Avg brand rank" value={avgRank === null ? "N/A" : `#${avgRank.toFixed(1)}`} />
+      <div className="mt-4 space-y-5">
+        {blocks.map((b, i) => (
+          <QualityBlockCard key={b.label ?? i} q={b.q} label={b.label} />
+        ))}
       </div>
-      <p className="mt-3 text-xs text-muted-foreground">
-        Sentiment of {mentioned.length} brand mention(s):{" "}
-        <span className="text-success">🟢 {pos} positive</span> ·{" "}
-        <span>⚪ {neu} neutral</span> · <span className="text-danger">🔴 {neg} negative</span>.
-      </p>
     </motion.div>
   );
 }
@@ -407,8 +521,8 @@ export function GeoSection({ report }: { report: Report }) {
       {/* AI Engine / Model GEO Breakdown */}
       <EngineBreakdown engines={report.geo_report?.engine_scores ?? []} overall={geoScore} />
 
-      {/* GEO Quality Signals — sentiment, recommendation, citations, rank */}
-      <QualitySignals measured={measured} />
+      {/* GEO Quality Signals — per engine: sentiment, recommendation, citations, rank, SoV */}
+      <QualitySignals engines={report.geo_report?.engine_scores ?? []} measured={measured} />
 
       {/* Share of Voice — ranked brands (subject + competitors) by presence */}
       {sov.length > 0 && (() => {

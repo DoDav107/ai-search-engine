@@ -1230,47 +1230,126 @@ if engine_scores:
     for e in (e for e in engine_scores if e.get("error")):
         st.caption(f"⚠️ {e.get('provider')}/{e.get('model')} not run: {e.get('error')}")
 
-# GEO Quality Signals — beyond "is the brand mentioned": how it's mentioned.
-# Shown only when the report carries quality signals (older reports skip this cleanly).
-_quality_rows = [r for r in measured if r.get("per_query_geo_score") is not None]
-if _quality_rows:
-    st.markdown("#### GEO Quality Signals")
-    _mentioned = [r for r in _quality_rows if r.get("brand_mentioned")]
-    _sents = [float(r.get("sentiment_score") or 0.0) for r in _mentioned]
-    _avg_sent = (sum(_sents) / len(_sents)) if _sents else None
-    _pos = sum(1 for r in _mentioned if r.get("sentiment_label") == "positive")
-    _neu = sum(1 for r in _mentioned if r.get("sentiment_label") == "neutral")
-    _neg = sum(1 for r in _mentioned if r.get("sentiment_label") == "negative")
-    _recs = [float(r.get("recommendation_score") or 0.0) for r in _mentioned]
-    _avg_rec = (sum(_recs) / len(_recs) * 100) if _recs else None
-    _cite_cov = sum(1 for r in _quality_rows if r.get("citations_present")) / len(_quality_rows) * 100
-    _comp_total = sum(int(r.get("competitor_count") or 0) for r in _quality_rows)
-    _ranks = [r.get("brand_rank_position") for r in _quality_rows if r.get("brand_rank_position")]
-    _avg_rank = (sum(_ranks) / len(_ranks)) if _ranks else None
+# GEO Quality Signals — beyond "is the brand mentioned": HOW it's mentioned.
+# Per engine, with EXPLICIT denominators so the numbers can't be misread:
+#   • sentiment / recommendation / brand rank → over brand-mention answers ONLY
+#     (N/A when the brand isn't mentioned — never a misleading number).
+#   • citation coverage / competitor mentions → across ALL answers (so labelled).
+# When the brand scores 0%, the section pivots to "who DID win these answers".
+def _legacy_quality_block(rows: list[dict]) -> dict:
+    """Build a quality block from old per-query rows (no stored `quality`).
 
-    qc = st.columns(5)
-    qc[0].metric("Avg sentiment", f"{_avg_sent:+.2f}" if _avg_sent is not None else "N/A")
-    qc[1].metric("Avg recommendation", f"{_avg_rec:.0f}%" if _avg_rec is not None else "N/A")
-    qc[2].metric("Citation coverage", f"{_cite_cov:.0f}%")
-    qc[3].metric("Competitor mentions", _comp_total)
-    qc[4].metric("Avg brand rank", f"#{_avg_rank:.1f}" if _avg_rank is not None else "N/A")
+    Competitor names weren't ranked in old reports, so top_competitors/leaders are
+    empty — the rest (denominators, SoV, sentiment) renders identically.
+    """
+    n_all = len(rows)
+    men = [r for r in rows if r.get("brand_mentioned")]
+    sents = [float(r.get("sentiment_score") or 0.0) for r in men]
+    recs = [float(r.get("recommendation_score") or 0.0) for r in men]
+    ranks = [r.get("brand_rank_position") for r in men if r.get("brand_rank_position")]
+    cites = sum(1 for r in rows if r.get("citations_present"))
+    return {
+        "answers_total": n_all,
+        "brand_mentions": len(men),
+        "sov": round(len(men) / n_all, 4) if n_all else 0.0,
+        "sentiment": {
+            "avg": round(sum(sents) / len(sents), 3) if sents else None,
+            "positive": sum(1 for r in men if r.get("sentiment_label") == "positive"),
+            "neutral": sum(1 for r in men if r.get("sentiment_label") == "neutral"),
+            "negative": sum(1 for r in men if r.get("sentiment_label") == "negative"),
+        },
+        "recommendation": {"avg": round(sum(recs) / len(recs), 3) if recs else None},
+        "avg_brand_rank": round(sum(ranks) / len(ranks), 2) if ranks else None,
+        "citations_answers": cites,
+        "citation_coverage": round(cites / n_all, 4) if n_all else 0.0,
+        "competitor_total": sum(int(r.get("competitor_count") or 0) for r in rows),
+        "top_competitors": [],
+        "competitor_leaders": [],
+    }
+
+
+def _render_quality_block(q: dict, label: str | None = None) -> None:
+    n_all = int(q.get("answers_total") or 0)
+    n_men = int(q.get("brand_mentions") or 0)
+    if label:
+        st.markdown(f"**{label}**")
     st.caption(
-        f"Sentiment of {len(_mentioned)} brand mention(s): "
-        f"🟢 {_pos} positive · ⚪ {_neu} neutral · 🔴 {_neg} negative."
+        f"Share of Voice: **{(q.get('sov') or 0.0) * 100:.0f}%** — "
+        f"brand mentioned in {n_men} of {n_all} answers."
     )
 
-    # Lightweight, deterministic improvement tips derived from the signals.
-    _tips: list[str] = []
-    if _mentioned and _avg_sent is not None and _avg_sent <= 0.15:
-        _tips.append("Improve brand positioning content so AI answers describe the brand more positively.")
-    if _cite_cov < 50:
-        _tips.append("Add clearer sourceable content and structured data to improve citation likelihood.")
-    if _mentioned and _comp_total > len(_mentioned):
-        _tips.append("Create comparison / use-case pages to improve share of voice vs competitors.")
-    if _avg_rank is not None and _avg_rank > 2:
-        _tips.append("Strengthen topical authority around these query themes where competitors appear first.")
-    for _t in _tips[:3]:
-        st.caption(f"💡 {_t}")
+    sent = q.get("sentiment") or {}
+    rec = q.get("recommendation") or {}
+    avg_sent = sent.get("avg")
+    avg_rec = rec.get("avg")
+    avg_rank = q.get("avg_brand_rank")
+    cite_cov = (q.get("citation_coverage") or 0.0) * 100
+
+    qc = st.columns(5)
+    if n_men:
+        qc[0].metric("Avg sentiment", f"{avg_sent:+.2f}" if avg_sent is not None else "N/A")
+        qc[1].metric("Avg recommendation", f"{avg_rec * 100:.0f}%" if avg_rec is not None else "N/A")
+        qc[4].metric("Avg brand rank", f"#{avg_rank:.1f}" if avg_rank is not None else "N/A")
+    else:
+        qc[0].metric("Avg sentiment", "N/A", help="Brand not mentioned in any answer")
+        qc[1].metric("Avg recommendation", "N/A", help="Brand not mentioned in any answer")
+        qc[4].metric("Avg brand rank", "N/A", help="Brand not mentioned in any answer")
+    # These two are ALWAYS across all answers — labelled so they aren't read as brand-specific.
+    qc[2].metric("Citation coverage", f"{cite_cov:.0f}%", help=f"Across all {n_all} answers")
+    qc[3].metric("Competitor mentions", int(q.get("competitor_total") or 0), help=f"Across all {n_all} answers")
+
+    if n_men:
+        st.caption(
+            f"Sentiment of {n_men} brand mention(s): "
+            f"🟢 {sent.get('positive', 0)} positive · ⚪ {sent.get('neutral', 0)} neutral · "
+            f"🔴 {sent.get('negative', 0)} negative."
+        )
+    else:
+        st.caption(f"🔴 **N/A — brand not mentioned** in any of the {n_all} answers for this engine.")
+
+    # Ranked competitor breakdown (not just a total).
+    top = q.get("top_competitors") or []
+    if top:
+        st.caption(f"Top competitors across all {n_all} answers (by # answers mentioning):")
+        st.dataframe(
+            pd.DataFrame([{"Competitor": c.get("name", ""), "Answers": int(c.get("count") or 0)} for c in top]),
+            width="stretch", hide_index=True,
+        )
+
+    # Zero-visibility pivot: show what winning answers look like.
+    leaders = q.get("competitor_leaders") or []
+    if n_men == 0 and leaders:
+        st.caption("Brand absent — here's **who won these answers and how strongly**:")
+        st.dataframe(
+            pd.DataFrame([
+                {
+                    "Competitor": d.get("name", ""),
+                    "Mentions": int(d.get("mentions") or 0),
+                    "Sentiment": d.get("sentiment_label", "—"),
+                    "Recommendation": d.get("recommendation_strength", "—"),
+                    "Best rank": f"#{d['rank']}" if d.get("rank") else "—",
+                }
+                for d in leaders
+            ]),
+            width="stretch", hide_index=True,
+        )
+
+
+_q_engines = [e for e in engine_scores if e.get("quality")]
+_quality_rows = [r for r in measured if r.get("per_query_geo_score") is not None]
+if _q_engines:
+    st.markdown("#### GEO Quality Signals")
+    st.caption(
+        "Brand-mention metrics (sentiment · recommendation · rank) are over answers that "
+        "**mention the brand**; citation coverage and competitor mentions are over **all answers**."
+    )
+    _multi = len(_q_engines) > 1
+    for e in sorted(_q_engines, key=lambda x: (x.get("provider", ""), x.get("model", ""))):
+        lbl = f"{e.get('provider', '')} / {e.get('model', '')}" if _multi else None
+        _render_quality_block(e["quality"], lbl)
+elif _quality_rows:  # backward compat: old report without a stored quality block
+    st.markdown("#### GEO Quality Signals")
+    _render_quality_block(_legacy_quality_block(_quality_rows))
 
 if geo_results:
     gcol1, gcol2 = st.columns([1, 2])

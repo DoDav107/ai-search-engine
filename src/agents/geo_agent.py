@@ -847,11 +847,15 @@ def analyze_quality_signals(
     brand: str,
     brand_aliases: list[str],
     accuracy_keywords: list[str] | None = None,
+    pos_words: tuple[str, ...] = _POSITIVE_WORDS,
+    neg_words: tuple[str, ...] = _NEGATIVE_WORDS,
+    rec_words: tuple[str, ...] = _RECOMMEND_WORDS,
 ) -> GeoQueryResult:
     """Populate the rule-based GEO quality signals on a query result, in place.
 
-    Deterministic and offline — no extra model call. Errored/absent rows get safe
-    defaults ("unknown"/"none"). See field docs on GeoQueryResult.
+    Deterministic and offline — no extra model call. Sentiment/recommendation keyword
+    lists are config-editable (passed in). Errored/absent rows get safe defaults
+    ("unknown"/"none"). See field docs on GeoQueryResult.
     """
     # Competitors mirror the already-detected list (single source of truth).
     result.competitor_names_mentioned = list(result.competitors_found or [])
@@ -890,8 +894,8 @@ def analyze_quality_signals(
     positions = _find_brand_mentions(answer, _alias_keys(brand, brand_aliases))
     windows = [lower[max(0, p - _SENTIMENT_WINDOW): p + _SENTIMENT_WINDOW] for p in positions]
     context = " ".join(windows) if windows else lower
-    pos_hits = _count_terms(context, _POSITIVE_WORDS)
-    neg_hits = _count_terms(context, _NEGATIVE_WORDS)
+    pos_hits = _count_terms(context, pos_words)
+    neg_hits = _count_terms(context, neg_words)
     if pos_hits + neg_hits == 0:
         result.sentiment_label, result.sentiment_score = "neutral", 0.0
     else:
@@ -908,7 +912,7 @@ def analyze_quality_signals(
     # tops an actual numbered list, or recommend-words sit near the brand. Being placed
     # in a list below #1 is "moderate"; a positive-but-unranked mention is "moderate";
     # a merely-named mention is "weak".
-    recommend_near = _count_terms(context, _RECOMMEND_WORDS) > 0
+    recommend_near = _count_terms(context, rec_words) > 0
     if (from_list and rank == 1) or (recommend_near and not (from_list and rank and rank > 1)):
         result.recommendation_strength, result.recommendation_score = "strong", 1.0
     elif (from_list and rank and rank > 1) or result.sentiment_label == "positive":
@@ -922,6 +926,161 @@ def geo_weights(config: dict[str, Any]) -> dict[str, float]:
     """Load the (tunable) GEO scoring weights from config, falling back to defaults."""
     scoring = config.get("scoring") or {}
     return {key: float(scoring.get(key, default)) for key, default in _DEFAULT_WEIGHTS.items()}
+
+
+def sentiment_words(config: dict[str, Any]) -> dict[str, tuple[str, ...]]:
+    """Config-editable positive/negative/recommend keyword lists (with defaults)."""
+    sent = (config.get("scoring") or {}).get("sentiment") or {}
+
+    def _as_tuple(value: Any, default: tuple[str, ...]) -> tuple[str, ...]:
+        if isinstance(value, list) and value:
+            return tuple(str(v).strip() for v in value if str(v).strip())
+        return default
+
+    return {
+        "pos_words": _as_tuple(sent.get("positive"), _POSITIVE_WORDS),
+        "neg_words": _as_tuple(sent.get("negative"), _NEGATIVE_WORDS),
+        "rec_words": _as_tuple(sent.get("recommend"), _RECOMMEND_WORDS),
+    }
+
+
+def neutral_accuracy_value(config: dict[str, Any]) -> float:
+    """The neutral value used for unevaluated accuracy. New key with legacy fallback."""
+    scoring = config.get("scoring") or {}
+    if "neutral_accuracy_value" in scoring:
+        return float(scoring["neutral_accuracy_value"])
+    return float(scoring.get("accuracy_unknown_score", 0.5))
+
+
+def _entity_quality(
+    measured: list[GeoQueryResult],
+    name: str,
+    pos_words: tuple[str, ...],
+    neg_words: tuple[str, ...],
+    rec_words: tuple[str, ...],
+) -> dict[str, Any] | None:
+    """Aggregate sentiment / recommendation / best rank for ONE entity (competitor).
+
+    Mirrors the brand signals but for an arbitrary name, aggregated across the answers
+    that mention it. Used for the zero-visibility pivot ("who DID get mentioned and how").
+    Returns None if the entity isn't mentioned anywhere.
+    """
+    keys = _alias_keys(name)
+    sent_scores: list[float] = []
+    ranks: list[int] = []
+    strengths: list[int] = []
+    answers = 0
+    for result in measured:
+        answer = result.answer or ""
+        positions = _find_brand_mentions(answer, keys)
+        if not positions:
+            continue
+        answers += 1
+        lower = answer.lower()
+        context = " ".join(lower[max(0, p - _SENTIMENT_WINDOW): p + _SENTIMENT_WINDOW] for p in positions)
+        pos_h, neg_h = _count_terms(context, pos_words), _count_terms(context, neg_words)
+        score = (pos_h - neg_h) / (pos_h + neg_h) if (pos_h + neg_h) else 0.0
+        sent_scores.append(max(-1.0, min(1.0, score)))
+        rank = None
+        for match in _NUMBERED_LIST_RE.finditer(answer):
+            if _find_brand_mentions(match.group(2), keys):
+                rank = int(match.group(1))
+                break
+        if rank:
+            ranks.append(rank)
+        if rank == 1 or _count_terms(context, rec_words) > 0:
+            strengths.append(3)
+        elif score > 0.15:
+            strengths.append(2)
+        else:
+            strengths.append(1)
+    if not answers:
+        return None
+    avg = sum(sent_scores) / len(sent_scores)
+    label = "positive" if avg > 0.15 else "negative" if avg < -0.15 else "neutral"
+    avg_strength = sum(strengths) / len(strengths)
+    rec = "strong" if avg_strength >= 2.5 else "moderate" if avg_strength >= 1.5 else "weak"
+    return {
+        "name": name,
+        "mentions": answers,
+        "sentiment_label": label,
+        "recommendation_strength": rec,
+        "rank": min(ranks) if ranks else None,
+    }
+
+
+def build_engine_quality(
+    results: list[GeoQueryResult],
+    brand: str,
+    brand_aliases: list[str],
+    words: dict[str, tuple[str, ...]],
+) -> dict[str, Any]:
+    """Per-engine GEO quality aggregates with EXPLICIT, consistent denominators.
+
+    Single source of truth for both dashboards so labels and math match:
+      - sentiment / recommendation / brand rank → over BRAND-MENTION answers only.
+      - citation coverage / competitor mentions → over ALL measured answers.
+      - SoV = brand-mention answers / measured answers.
+      - top_competitors: ranked by # answers mentioning them (name-normalised).
+      - competitor_leaders: top-3 rivals with their sentiment/recommendation/rank
+        (the zero-visibility pivot — "what winning answers look like").
+    """
+    measured = [r for r in results if not r.error]
+    n_all = len(measured)
+    mentioned = [r for r in measured if r.brand_mentioned]
+    n_mentions = len(mentioned)
+
+    def _avg(xs: list[float]) -> float | None:
+        return round(sum(xs) / len(xs), 3) if xs else None
+
+    sent_scores = [float(r.sentiment_score or 0.0) for r in mentioned]
+    rec_scores = [float(r.recommendation_score or 0.0) for r in mentioned]
+    ranks = [r.brand_rank_position for r in mentioned if r.brand_rank_position]
+
+    # Competitor mentions counted once per answer, collapsing case/punct variants.
+    counts: dict[str, list] = {}  # norm-key -> [display, answers_count]
+    for result in measured:
+        seen: set[str] = set()
+        for raw in result.competitors_found or []:
+            key = _norm_key(raw)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            if key not in counts:
+                counts[key] = [raw, 0]
+            counts[key][1] += 1
+    top = sorted(counts.values(), key=lambda dc: (-dc[1], dc[0].lower()))
+    top_competitors = [{"name": d, "count": c} for d, c in top[:8]]
+    competitor_total = sum(c for _, c in counts.values())
+
+    leaders = [
+        q for q in (_entity_quality(measured, d, words["pos_words"], words["neg_words"], words["rec_words"])
+                    for d, _ in top[:3]) if q
+    ]
+
+    return {
+        "answers_total": n_all,
+        "brand_mentions": n_mentions,
+        "sov": round(n_mentions / n_all, 4) if n_all else 0.0,
+        "sentiment": {
+            "avg": _avg(sent_scores),
+            "positive": sum(1 for r in mentioned if r.sentiment_label == "positive"),
+            "neutral": sum(1 for r in mentioned if r.sentiment_label == "neutral"),
+            "negative": sum(1 for r in mentioned if r.sentiment_label == "negative"),
+        },
+        "recommendation": {
+            "avg": _avg(rec_scores),
+            "strong": sum(1 for r in mentioned if r.recommendation_strength == "strong"),
+            "moderate": sum(1 for r in mentioned if r.recommendation_strength == "moderate"),
+            "weak": sum(1 for r in mentioned if r.recommendation_strength == "weak"),
+        },
+        "avg_brand_rank": round(sum(ranks) / len(ranks), 2) if ranks else None,
+        "citations_answers": sum(1 for r in measured if r.citations_present),
+        "citation_coverage": round(sum(1 for r in measured if r.citations_present) / n_all, 4) if n_all else 0.0,
+        "competitor_total": competitor_total,
+        "top_competitors": top_competitors,
+        "competitor_leaders": leaders,
+    }
 
 
 def per_query_geo_score(
@@ -1100,7 +1259,11 @@ def _run_engine(
             )
 
         # Rule-based GEO quality signals + richer per-query score (deterministic, offline).
-        analyze_quality_signals(result, brand, brand_aliases, quality_cfg["accuracy_keywords"])
+        _w = quality_cfg["words"]
+        analyze_quality_signals(
+            result, brand, brand_aliases, quality_cfg["accuracy_keywords"],
+            pos_words=_w["pos_words"], neg_words=_w["neg_words"], rec_words=_w["rec_words"],
+        )
         result.per_query_geo_score = per_query_geo_score(
             result, quality_cfg["weights"], quality_cfg["accuracy_neutral"]
         )
@@ -1159,12 +1322,13 @@ def run_geo(config: dict[str, Any], progress: Callable[[dict], None] | None = No
         "max_tokens": int(ce_cfg.get("max_completion_tokens", 300)),
     }
 
-    # Tunable scoring weights + accuracy settings for the per-query GEO quality score.
+    # Tunable scoring weights + accuracy settings + (config-editable) sentiment words.
     scoring_cfg = config.get("scoring") or {}
     quality_cfg = {
         "weights": geo_weights(config),
-        "accuracy_neutral": float(scoring_cfg.get("accuracy_unknown_score", 0.5)),
+        "accuracy_neutral": neutral_accuracy_value(config),
         "accuracy_keywords": list(scoring_cfg.get("accuracy_keywords") or config.get("accuracy_keywords") or []),
+        "words": sentiment_words(config),
     }
 
     engines = _resolve_engines(config)
@@ -1196,6 +1360,7 @@ def run_geo(config: dict[str, Any], progress: Callable[[dict], None] | None = No
                 "visibility_rate": 0.0, "queries_run": 0, "brand_mentions": 0,
                 "avg_prominence": 0.0, "api_key_source": api_key_source if provider != "mock" else "none",
                 "web_grounded": False, "sources_count": 0, "grounding_warning": None,
+                "quality": None,
                 "error": str(exc),
             })
             _emit({"phase": "geo_engine_error", "provider": provider, "model": model, "error": str(exc)})
@@ -1218,6 +1383,7 @@ def run_geo(config: dict[str, Any], progress: Callable[[dict], None] | None = No
             **stats,
             "api_key_source": client.api_key_source,
             "grounding_warning": grounding_warning,
+            "quality": build_engine_quality(engine_results, brand, brand_aliases, quality_cfg["words"]),
             "error": None,
         })
 

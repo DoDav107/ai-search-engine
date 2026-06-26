@@ -154,7 +154,18 @@ scoring:
   recommendation_weight: 0.15    # recommended/top option vs merely named
   citation_weight: 0.10          # answer includes source links
   accuracy_weight: 0.05          # answer is accurate about the brand (placeholder)
-  accuracy_unknown_score: 0.5    # neutral value used while accuracy is not LLM-evaluated
+  neutral_accuracy_value: 0.5    # neutral value used while accuracy is not LLM-evaluated
   # Optional: if the brand is mentioned AND any of these terms appear in the answer,
   # accuracy is marked "accurate"; otherwise "unknown" (never guessed "inaccurate").
   accuracy_keywords: []
+  # Sentiment is rule-based: positive/negative keywords near a brand mention. These
+  # lists are config-editable (omit one to fall back to the built-in defaults).
+  sentiment:
+    positive: [recommended, recommend, "good choice", "great choice", leading, best,
+               top, trusted, specialist, popular, reliable, excellent, ideal,
+               favorite, favourite, go-to, preferred, "strong option", "industry leader"]
+    negative: [limited, unknown, "not well-known", "not well known", "less established",
+               lesser-known, "lesser known", poor, weak, obscure, unproven, outdated,
+               lacking, niche]
+    recommend: [best, top, leading, recommended, recommend, "top choice", ideal,
+                go-to, "number one", "most popular"]

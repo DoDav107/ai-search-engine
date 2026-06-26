@@ -46,6 +46,35 @@ export type GeoResult = {
 };
 
 // Per engine/model GEO breakdown. Visibility differs across ChatGPT, Claude, etc.
+// Per-engine GEO quality aggregates with EXPLICIT denominators (computed in Python so
+// both dashboards render identical math/labels). Optional — absent on older reports.
+export type CompetitorCount = { name: string; count: number };
+export type CompetitorLeader = {
+  name: string;
+  mentions: number;
+  sentiment_label: string;
+  recommendation_strength: string;
+  rank: number | null;
+};
+export type EngineQuality = {
+  answers_total: number;
+  brand_mentions: number;
+  sov: number; // 0..1, brand-mention answers / all answers
+  sentiment: {
+    avg: number | null; // null when brand not mentioned
+    positive: number;
+    neutral: number;
+    negative: number;
+  };
+  recommendation: { avg: number | null; strong?: number; moderate?: number; weak?: number };
+  avg_brand_rank: number | null;
+  citations_answers: number; // across ALL answers
+  citation_coverage: number; // 0..1, across ALL answers
+  competitor_total: number; // across ALL answers
+  top_competitors: CompetitorCount[];
+  competitor_leaders: CompetitorLeader[]; // zero-visibility pivot
+};
+
 export type EngineScore = {
   provider: string;
   model: string;
@@ -58,6 +87,7 @@ export type EngineScore = {
   web_grounded?: boolean;
   sources_count?: number;
   grounding_warning?: string | null;
+  quality?: EngineQuality | null;
   error?: string | null;
 };
 

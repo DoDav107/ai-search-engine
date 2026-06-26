@@ -10,42 +10,14 @@ brand_aliases:
   - "Converse"
 competitors: []
 
+# New Audit form defaults. The provider→models CATALOG is no longer duplicated here:
+# it is derived from the `engines:` list below by src/agents/geo_agent.py build_catalog
+# (the single source of truth shared by both dashboards, the factory, and the pipeline),
+# so the form, the config, and the results can never drift. Only the picker DEFAULTS live
+# here; they must point at a ui_selectable provider/model (never mock).
 geo:
   default_provider: "openai"
   default_model: "gpt-5.5"
-  providers:
-    openai:
-      label: "OpenAI"
-      env_key_name: "OPENAI_API_KEY"
-      models:
-        - id: "gpt-5.5"
-          label: "GPT-5.5"
-        - id: "gpt-4.1"
-          label: "GPT-4.1"
-        - id: "gpt-4o"
-          label: "GPT-4o"
-    anthropic:
-      label: "Claude"
-      env_key_name: "ANTHROPIC_API_KEY"
-      models:
-        - id: "claude-sonnet-4"
-          label: "Claude Sonnet 4"
-        - id: "claude-opus-4"
-          label: "Claude Opus 4"
-    perplexity:
-      label: "Perplexity"
-      env_key_name: "PERPLEXITY_API_KEY"
-      models:
-        - id: "sonar"
-          label: "Sonar"
-        - id: "sonar-pro"
-          label: "Sonar Pro"
-    mock:
-      label: "Mock / Demo"
-      env_key_name: null
-      models:
-        - id: "mock-default"
-          label: "Mock default"
 
 # AI engines/models to measure GEO visibility against. Brand visibility differs across
 # ChatGPT, Claude, Gemini, Grok, Perplexity, etc., so each ENABLED engine is run

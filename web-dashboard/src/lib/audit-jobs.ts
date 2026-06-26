@@ -6,6 +6,23 @@ import path from "node:path";
 const STDERR_LIMIT = 12_000;
 const MAX_EVENTS = 200;
 
+// API-key env var per provider — mirrors PROVIDER_ENV_VAR in src/agents/geo_agent.py.
+// Lets a temporary key be injected for the SELECTED provider (not just OpenAI).
+const PROVIDER_ENV_VAR: Record<string, string> = {
+  openai: "OPENAI_API_KEY",
+  anthropic: "ANTHROPIC_API_KEY",
+  google: "GOOGLE_API_KEY",
+  xai: "XAI_API_KEY",
+  perplexity: "PERPLEXITY_API_KEY",
+  deepseek: "DEEPSEEK_API_KEY",
+};
+
+function temporaryKeyEnv(input: AuditInput): Record<string, string> {
+  if (input.api_key_mode !== "temporary" || !input.temporary_api_key) return {};
+  const envVar = PROVIDER_ENV_VAR[(input.geo_provider ?? "").toLowerCase()];
+  return envVar ? { [envVar]: input.temporary_api_key } : {};
+}
+
 export type ProgressEvent = { phase: string; [key: string]: unknown };
 
 export type AuditInput = {
@@ -13,6 +30,10 @@ export type AuditInput = {
   brand: string;
   domain: string;
   queries: string[];
+  geo_provider?: string;
+  geo_model?: string;
+  api_key_mode?: "env" | "temporary";
+  temporary_api_key?: string;
 };
 
 export type AuditJob = {
@@ -22,6 +43,9 @@ export type AuditJob = {
   brand: string;
   domain: string;
   queries: string[];
+  geo_provider?: string;
+  geo_model?: string;
+  api_key_source?: "env" | "temporary" | "none";
   startedAt: string;
   updatedAt: string;
   finishedAt?: string;
@@ -142,7 +166,9 @@ async function writeAuditConfigs(
     crawl: path.join(configDir, "crawl_config.yaml"),
     geo: path.join(configDir, "geo_config.yaml"),
   };
-  await runConfigWriter(python, repoRoot, input, config);
+  const safeInput: AuditInput = { ...input };
+  delete safeInput.temporary_api_key;
+  await runConfigWriter(python, repoRoot, safeInput, config);
   return config;
 }
 
@@ -157,6 +183,9 @@ export async function startAudit(input: AuditInput): Promise<AuditJob> {
     brand: input.brand,
     domain: input.domain,
     queries: input.queries,
+    geo_provider: input.geo_provider,
+    geo_model: input.geo_model,
+    api_key_source: input.api_key_mode === "temporary" ? "temporary" : input.geo_provider === "mock" ? "none" : "env",
     startedAt: now,
     updatedAt: now,
     events: [{ phase: "queued", message: "Preparing pipeline config." }],
@@ -187,6 +216,7 @@ export async function startAudit(input: AuditInput): Promise<AuditJob> {
       AUDIT_CRAWL_CONFIG_PATH: job.config.crawl,
       AUDIT_GEO_CONFIG_PATH: job.config.geo,
       AUDIT_PROGRESS_STDOUT: "1",
+      ...temporaryKeyEnv(input),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

@@ -21,12 +21,15 @@ def _normalize_url(value: str) -> str:
     return value
 
 
-def _validate(params: dict[str, Any]) -> tuple[str, str, str, list[str], list[str]]:
+def _validate(params: dict[str, Any]) -> tuple[str, str, str, list[str], str | None, str | None, str, list[str]]:
     errors: list[str] = []
     client = str(params.get("client") or "").strip()
     brand = str(params.get("brand") or "").strip()
     domain = _normalize_url(str(params.get("domain") or params.get("url") or ""))
     queries = [str(q).strip() for q in (params.get("queries") or []) if str(q).strip()]
+    geo_provider = str(params.get("geo_provider") or "").strip().lower() or None
+    geo_model = str(params.get("geo_model") or "").strip() or None
+    api_key_mode = str(params.get("api_key_mode") or "env").strip().lower()
 
     if not client:
         errors.append("client is required")
@@ -39,19 +42,29 @@ def _validate(params: dict[str, Any]) -> tuple[str, str, str, list[str], list[st
         errors.append("at least one query is required")
     if len(queries) > MAX_QUERIES:
         errors.append(f"too many queries ({len(queries)}); max is {MAX_QUERIES}")
+    if api_key_mode not in {"env", "temporary"}:
+        errors.append("api_key_mode must be 'env' or 'temporary'")
 
-    return client, brand, domain, queries, errors
+    return client, brand, domain, queries, geo_provider, geo_model, api_key_mode, errors
 
 
 def write_audit_configs(params: dict[str, Any], crawl_out: Path, geo_out: Path) -> None:
     """Build dashboard audit configs using the same override path as Streamlit."""
-    client, brand, domain, queries, errors = _validate(params)
+    client, brand, domain, queries, geo_provider, geo_model, api_key_mode, errors = _validate(params)
     if errors:
         raise ValueError("; ".join(errors))
 
     from src.pipeline import build_audit_configs
 
-    seo_config, geo_config = build_audit_configs(client=client, brand=brand, base_url=domain, queries=queries)
+    seo_config, geo_config = build_audit_configs(
+        client=client,
+        brand=brand,
+        base_url=domain,
+        queries=queries,
+        geo_provider=geo_provider,
+        geo_model=geo_model,
+        api_key_source="temporary" if api_key_mode == "temporary" else "env",
+    )
     crawl_out.parent.mkdir(parents=True, exist_ok=True)
     geo_out.parent.mkdir(parents=True, exist_ok=True)
     crawl_out.write_text(yaml.safe_dump(seo_config, sort_keys=False, allow_unicode=True), encoding="utf-8")

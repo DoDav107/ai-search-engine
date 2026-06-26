@@ -41,6 +41,101 @@ PROVIDER_ENV_VAR: dict[str, str] = {
     "deepseek": "DEEPSEEK_API_KEY",
 }
 
+# Human display name per provider for the New Audit form dropdowns.
+PROVIDER_LABELS: dict[str, str] = {
+    "openai": "OpenAI",
+    "anthropic": "Claude",
+    "google": "Google Gemini",
+    "deepseek": "DeepSeek",
+    "xai": "xAI (Grok)",
+    "perplexity": "Perplexity",
+    "mock": "Mock / Demo",
+}
+
+# Whether a provider may be CHOSEN in the user-facing New Audit form. Mock is the free
+# offline test path and the verify gate — it stays fully runnable from geo_config.yaml /
+# CLI / the engine factory, but ui_selectable=False keeps it out of the client-facing
+# dropdowns. This is a flag, never a hardcoded exclusion, so the forms simply filter on it.
+UI_SELECTABLE: dict[str, bool] = {
+    "openai": True,
+    "anthropic": True,
+    "google": True,
+    "deepseek": True,
+    "xai": True,
+    "perplexity": True,
+    "mock": False,
+}
+
+# Order providers appear in the dropdowns; unknown providers from config follow.
+PROVIDER_ORDER: list[str] = ["openai", "anthropic", "google", "deepseek", "xai", "perplexity", "mock"]
+
+
+def build_catalog(config: dict[str, Any]) -> dict[str, Any]:
+    """Single source of truth for the provider→models catalog used by BOTH dashboards.
+
+    Models are derived from ``config['engines']`` — the exact provider+model strings the
+    engine factory (:func:`create_engine_client`) runs — so the New Audit forms,
+    geo_config.yaml, the pipeline, and the results can never drift. The per-engine
+    ``enabled`` flag is intentionally ignored: it gates a batch run, not what a user may
+    pick. Provider metadata (label, API-key env var, ui_selectable, grounding) comes from
+    the maps above. Mock is included with ``ui_selectable=False`` so it stays runnable from
+    config/CLI while the forms filter it out.
+
+    Returns ``{default_provider, default_model, providers}`` where each provider carries
+    ``{label, env_key_name, ui_selectable, web_grounded, models:[{id,label}]}``. Defaults
+    always land on a UI-selectable provider so a form never defaults to mock.
+
+    Model strings are CONFIG — verify each against the provider's current models page:
+      OpenAI     https://platform.openai.com/docs/models
+      Anthropic  https://docs.anthropic.com/en/docs/about-claude/models
+      Google     https://ai.google.dev/gemini-api/docs/models
+      DeepSeek   https://api-docs.deepseek.com
+      xAI        https://docs.x.ai/docs/models
+      Perplexity https://docs.perplexity.ai/getting-started/models
+    """
+    by_provider: dict[str, list[str]] = {}
+    engines = config.get("engines")
+    if isinstance(engines, list):
+        for entry in engines:
+            if not isinstance(entry, dict):
+                continue
+            provider = str(entry.get("provider") or "").strip().lower()
+            model = str(entry.get("model") or "").strip()
+            if not provider or not model:
+                continue
+            models = by_provider.setdefault(provider, [])
+            if model not in models:
+                models.append(model)
+
+    ordered = [p for p in PROVIDER_ORDER if p in by_provider]
+    ordered += [p for p in by_provider if p not in ordered]
+
+    providers: dict[str, Any] = {}
+    for provider in ordered:
+        providers[provider] = {
+            "label": PROVIDER_LABELS.get(provider, provider),
+            "env_key_name": PROVIDER_ENV_VAR.get(provider),  # None for mock
+            "ui_selectable": UI_SELECTABLE.get(provider, True),
+            "web_grounded": SUPPORTS_WEB_SEARCH.get(provider, False),
+            "models": [{"id": m, "label": m} for m in by_provider[provider]],
+        }
+
+    geo = config.get("geo") if isinstance(config.get("geo"), dict) else {}
+    selectable = [p for p in ordered if providers[p]["ui_selectable"] and providers[p]["models"]]
+    default_provider = str(geo.get("default_provider") or "").strip().lower()
+    if default_provider not in selectable:
+        default_provider = selectable[0] if selectable else (ordered[0] if ordered else "")
+    default_model_ids = [m["id"] for m in providers.get(default_provider, {}).get("models", [])]
+    default_model = str(geo.get("default_model") or "").strip()
+    if default_model not in default_model_ids:
+        default_model = default_model_ids[0] if default_model_ids else ""
+
+    return {
+        "default_provider": default_provider,
+        "default_model": default_model,
+        "providers": providers,
+    }
+
 
 def _require_grounding(provider: str, grounding_enabled: bool) -> None:
     """Guard: a search-capable provider must run with its grounding tool enabled."""

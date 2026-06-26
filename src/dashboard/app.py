@@ -453,12 +453,16 @@ def _geo_options() -> dict[str, Any]:
                 "openai": {
                     "label": "OpenAI",
                     "env_key_name": "OPENAI_API_KEY",
-                    "models": [{"id": "gpt-5.5", "label": "GPT-5.5"}],
+                    "ui_selectable": True,
+                    "key_present": bool(os.environ.get("OPENAI_API_KEY")),
+                    "models": [{"id": "gpt-5.5", "label": "gpt-5.5"}],
                 },
                 "mock": {
                     "label": "Mock / Demo",
                     "env_key_name": None,
-                    "models": [{"id": "mock-default", "label": "Mock default"}],
+                    "ui_selectable": False,
+                    "key_present": True,
+                    "models": [{"id": "mock-default", "label": "mock-default"}],
                 },
             },
         }
@@ -466,18 +470,22 @@ def _geo_options() -> dict[str, Any]:
 
 @contextmanager
 def _temporary_provider_key(provider: str, key: str | None):
-    if provider != "openai" or not key:
+    """Temporarily set the SELECTED provider's API-key env var (not just OpenAI's)."""
+    from src.agents.geo_agent import PROVIDER_ENV_VAR
+
+    env_var = PROVIDER_ENV_VAR.get((provider or "").strip().lower())
+    if not env_var or not key:
         yield
         return
-    previous = os.environ.get("OPENAI_API_KEY")
-    os.environ["OPENAI_API_KEY"] = key
+    previous = os.environ.get(env_var)
+    os.environ[env_var] = key
     try:
         yield
     finally:
         if previous is None:
-            os.environ.pop("OPENAI_API_KEY", None)
+            os.environ.pop(env_var, None)
         else:
-            os.environ["OPENAI_API_KEY"] = previous
+            os.environ[env_var] = previous
 report_path = REPORTS_DIR / "latest_report.json"
 
 
@@ -529,8 +537,9 @@ with st.sidebar:
         )
         _geo_opts = _geo_options()
         _providers: dict[str, Any] = _geo_opts.get("providers") or {}
-        _provider_ids = list(_providers.keys())
-        _default_provider = _geo_opts.get("default_provider") if _geo_opts.get("default_provider") in _providers else (_provider_ids[0] if _provider_ids else "openai")
+        # Only UI-selectable providers appear (mock is backend-only — filtered, not hardcoded).
+        _provider_ids = [pid for pid, cfg in _providers.items() if cfg.get("ui_selectable", True)]
+        _default_provider = _geo_opts.get("default_provider") if _geo_opts.get("default_provider") in _provider_ids else (_provider_ids[0] if _provider_ids else "openai")
         _provider_labels = {pid: str(cfg.get("label") or pid) for pid, cfg in _providers.items()}
         na_provider = st.selectbox(
             "AI provider",
@@ -560,12 +569,18 @@ with st.sidebar:
                 horizontal=False,
                 key="na_api_key_mode",
             )
+            _sel_cfg = _providers.get(na_provider) or {}
+            if na_api_key_mode == "env" and not _sel_cfg.get("key_present", True):
+                st.warning(
+                    f"No {_sel_cfg.get('env_key_name') or 'API key'} configured on the server — "
+                    "add it to your .env or choose “Provide temporary key for this audit”."
+                )
             if na_api_key_mode == "temporary":
                 na_temporary_key = st.text_input(
                     "Temporary API key",
                     type="password",
                     key="na_temporary_api_key",
-                    placeholder=str((_providers.get(na_provider) or {}).get("env_key_name") or "API key"),
+                    placeholder=str(_sel_cfg.get("env_key_name") or "API key"),
                 )
             st.caption("Temporary keys are used only for this audit and are not saved to reports, config, logs, or git.")
         _q_count = len([q for q in (na_queries or "").splitlines() if q.strip()])

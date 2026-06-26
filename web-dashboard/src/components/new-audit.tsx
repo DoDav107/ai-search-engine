@@ -18,6 +18,21 @@ type JobStatus = {
   error?: string | null;
   stderr?: string | null;
 };
+type ProviderModel = { id: string; label: string };
+type ProviderOption = {
+  label: string;
+  env_key_name: string | null;
+  // Backend-only providers (mock) are ui_selectable:false — filtered out of this form.
+  ui_selectable?: boolean;
+  // Whether the provider's API-key env var is configured on the server.
+  key_present?: boolean;
+  models: ProviderModel[];
+};
+type GeoOptions = {
+  default_provider: string;
+  default_model: string;
+  providers: Record<string, ProviderOption>;
+};
 
 const BTN =
   "inline-flex cursor-pointer items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-2 text-sm font-medium text-foreground backdrop-blur-md transition-colors hover:border-white/20 hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-50";
@@ -87,6 +102,11 @@ export function NewAudit({ onComplete }: { onComplete: () => void }) {
   const [brand, setBrand] = useState("");
   const [domain, setDomain] = useState("");
   const [queriesRaw, setQueriesRaw] = useState("");
+  const [geoOptions, setGeoOptions] = useState<GeoOptions | null>(null);
+  const [geoProvider, setGeoProvider] = useState("openai");
+  const [geoModel, setGeoModel] = useState("gpt-5.5");
+  const [apiKeyMode, setApiKeyMode] = useState<"env" | "temporary">("env");
+  const [temporaryApiKey, setTemporaryApiKey] = useState("");
   const [confirm, setConfirm] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
 
@@ -99,9 +119,65 @@ export function NewAudit({ onComplete }: { onComplete: () => void }) {
 
   const queries = parseQueries(queriesRaw);
   const running = status === "running";
+  const providers = geoOptions?.providers ?? {};
+  // Only providers flagged ui_selectable appear in the form (mock is backend-only).
+  const selectableProviders = Object.entries(providers).filter(
+    ([, option]) => option.ui_selectable !== false,
+  );
+  const selectedProvider = providers[geoProvider];
+  const models = selectedProvider?.models ?? [];
+  // Surface a clear message when the saved-key path is chosen but the key isn't configured.
+  const keyMissing =
+    apiKeyMode === "env" &&
+    !!selectedProvider &&
+    selectedProvider.key_present === false;
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/audit/options", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((data: GeoOptions) => {
+        if (cancelled || !data.providers) return;
+        setGeoOptions(data);
+        // Default to a UI-selectable provider (never the backend-only mock).
+        const selectable = Object.entries(data.providers)
+          .filter(([, o]) => o.ui_selectable !== false)
+          .map(([id]) => id);
+        const provider =
+          (data.default_provider && selectable.includes(data.default_provider)
+            ? data.default_provider
+            : selectable[0]) || "openai";
+        const providerModels = data.providers[provider]?.models ?? [];
+        setGeoProvider(provider);
+        setGeoModel(data.default_model && providerModels.some((m) => m.id === data.default_model)
+          ? data.default_model
+          : providerModels[0]?.id ?? "");
+      })
+      .catch(() => {
+        /* The submit validation/API will surface config errors. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function changeProvider(provider: string) {
+    setGeoProvider(provider);
+    const nextModels = providers[provider]?.models ?? [];
+    setGeoModel(nextModels[0]?.id ?? "");
+    if (provider === "mock") {
+      setApiKeyMode("env");
+      setTemporaryApiKey("");
+    }
+  }
 
   async function handleSubmit() {
     const errs = validate(client, brand, domain, queries);
+    if (!geoProvider) errs.push("Choose an AI provider.");
+    if (!geoModel) errs.push("Choose an AI model.");
+    if (apiKeyMode === "temporary" && geoProvider !== "mock" && !temporaryApiKey.trim()) {
+      errs.push("Enter a temporary API key or choose the saved server key.");
+    }
     if (!confirm) errs.push("Tick the confirmation box before running.");
     setErrors(errs);
     if (errs.length) return;
@@ -118,6 +194,10 @@ export function NewAudit({ onComplete }: { onComplete: () => void }) {
           brand: brand.trim(),
           domain: normalizeDomain(domain),
           queries,
+          geo_provider: geoProvider,
+          geo_model: geoModel,
+          api_key_mode: geoProvider === "mock" ? "env" : apiKeyMode,
+          temporary_api_key: apiKeyMode === "temporary" ? temporaryApiKey : undefined,
         }),
       });
       const data = await res.json();
@@ -270,6 +350,89 @@ export function NewAudit({ onComplete }: { onComplete: () => void }) {
               {queries.length}/{MAX_QUERIES} queries · each runs a live web-search measurement (paid).
             </span>
           </label>
+
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <label className="text-sm">
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">AI provider</span>
+              <select
+                value={geoProvider}
+                onChange={(e) => changeProvider(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-[#111827] px-3 py-2 text-sm outline-none focus:border-primary/60"
+              >
+                {selectableProviders.map(([id, option]) => (
+                  <option key={id} value={id}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm">
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">AI model</span>
+              <select
+                value={geoModel}
+                onChange={(e) => setGeoModel(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-[#111827] px-3 py-2 text-sm outline-none focus:border-primary/60"
+              >
+                {models.map((model) => (
+                  <option key={model.id} value={model.id}>{model.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          {geoProvider !== "mock" && (
+            <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+              <p className="mb-2 text-xs font-medium text-muted-foreground">API key mode</p>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <input
+                    type="radio"
+                    name="api-key-mode"
+                    checked={apiKeyMode === "env"}
+                    onChange={() => {
+                      setApiKeyMode("env");
+                      setTemporaryApiKey("");
+                    }}
+                  />
+                  Use saved server key from .env
+                </label>
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <input
+                    type="radio"
+                    name="api-key-mode"
+                    checked={apiKeyMode === "temporary"}
+                    onChange={() => setApiKeyMode("temporary")}
+                  />
+                  Provide temporary key
+                </label>
+              </div>
+              {keyMissing && (
+                <p className="mt-2 flex items-start gap-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-[11px] leading-relaxed text-amber-200/90">
+                  <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                  <span>
+                    No {selectedProvider?.env_key_name ?? "API key"} configured on the server — add it to
+                    your .env or choose “Provide temporary key” below.
+                  </span>
+                </p>
+              )}
+              {apiKeyMode === "temporary" && (
+                <label className="mt-3 block text-sm">
+                  <span className="mb-1 block text-xs font-medium text-muted-foreground">
+                    Temporary API key
+                  </span>
+                  <input
+                    type="password"
+                    value={temporaryApiKey}
+                    onChange={(e) => setTemporaryApiKey(e.target.value)}
+                    placeholder={selectedProvider?.env_key_name ?? "API key"}
+                    autoComplete="off"
+                    className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm outline-none focus:border-primary/60"
+                  />
+                </label>
+              )}
+              <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+                Temporary keys are used only for this audit and are not saved to reports, config, logs, or git.
+              </p>
+            </div>
+          )}
 
           <label className="mt-4 flex items-start gap-2 text-xs text-muted-foreground">
             <input

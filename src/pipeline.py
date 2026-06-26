@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import unicodedata
 from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
@@ -22,6 +23,55 @@ from src.engine import scoring
 def _config_path(env_name: str, default: str) -> str:
     """Return an override config path from the environment, or the repo default."""
     return os.environ.get(env_name) or default
+
+
+def _brand_aliases(brand: str) -> list[str]:
+    """Generate conservative spelling aliases for brand matching."""
+    aliases = [brand]
+    compact = "".join(ch for ch in brand if ch.isalnum())
+    if compact and compact.lower() != brand.lower():
+        aliases.append(compact)
+    ascii_brand = "".join(
+        ch for ch in unicodedata.normalize("NFKD", brand) if not unicodedata.combining(ch)
+    )
+    if ascii_brand and ascii_brand not in aliases:
+        aliases.append(ascii_brand)
+    ascii_compact = "".join(ch for ch in ascii_brand if ch.isalnum())
+    if ascii_compact and ascii_compact not in aliases:
+        aliases.append(ascii_compact)
+    return aliases
+
+
+def _geo_catalog(config: dict[str, Any]) -> dict[str, Any]:
+    # Single source of truth: provider→models derived from the `engines:` list (incl.
+    # mock, which stays selectable here for config/CLI even though the forms hide it).
+    from src.agents.geo_agent import build_catalog
+
+    return build_catalog(config)
+
+
+def _select_geo_engine(
+    config: dict[str, Any],
+    provider: str | None,
+    model: str | None,
+) -> tuple[str, str]:
+    """Resolve a runtime provider/model against the config-driven catalog."""
+    catalog = _geo_catalog(config)
+    providers = catalog.get("providers") if isinstance(catalog.get("providers"), dict) else {}
+    selected_provider = (provider or catalog.get("default_provider") or "openai").strip().lower()
+    if selected_provider not in providers:
+        raise ValueError(f"Unknown GEO provider: {selected_provider}")
+
+    provider_cfg = providers[selected_provider] or {}
+    models = provider_cfg.get("models") if isinstance(provider_cfg.get("models"), list) else []
+    model_ids = [str(item.get("id", "")).strip() for item in models if isinstance(item, dict)]
+    selected_model = (model or "").strip() or str(catalog.get("default_model") or "").strip()
+    if selected_model not in model_ids:
+        if model_ids:
+            selected_model = model_ids[0]
+        else:
+            raise ValueError(f"No models configured for GEO provider: {selected_provider}")
+    return selected_provider, selected_model
 
 
 def load_pipeline_config(path: str = "config/pipeline_config.yaml") -> dict[str, float]:
@@ -82,6 +132,9 @@ def build_audit_configs(
     base_url: str,
     queries: list[str],
     client: str | None = None,
+    geo_provider: str | None = None,
+    geo_model: str | None = None,
+    api_key_source: str = "env",
     crawl_config_path: str = "config/crawl_config.yaml",
     geo_config_path: str = "config/geo_config.yaml",
 ) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -94,15 +147,37 @@ def build_audit_configs(
     """
     seo_config = scoring.load_config(crawl_config_path)
     site = {**seo_config.get("site", {}), "name": brand, "base_url": base_url, "seed_urls": ["/"]}
-    seo_config = {**seo_config, "site": site}
+    crawl = {
+        **seo_config.get("crawl", {}),
+        "respect_robots_txt": False,
+        "browser_fallback": True,
+        "timeout_seconds": max(float(seo_config.get("crawl", {}).get("timeout_seconds", 10)), 30.0),
+        "user_agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/126.0.0.0 Safari/537.36"
+        ),
+    }
+    seo_config = {**seo_config, "site": site, "crawl": crawl}
 
     geo_config = load_geo_config(geo_config_path)
+    selected_provider, selected_model = _select_geo_engine(geo_config, geo_provider, geo_model)
     geo_config = {
         **geo_config,
         "client": (client or brand).strip() or brand,
         "brand": brand,
         "queries": list(queries),
-        "brand_aliases": [brand],
+        "brand_aliases": _brand_aliases(brand),
+        "engines": [{"provider": selected_provider, "model": selected_model, "enabled": True}],
+        "audit_settings": {
+            "client": (client or brand).strip() or brand,
+            "brand": brand,
+            "domain": base_url,
+            "geo_provider": selected_provider,
+            "geo_model": selected_model,
+            "api_key_source": api_key_source if api_key_source in {"env", "temporary", "none"} else "env",
+            "queries_count": len(queries),
+        },
     }
     return seo_config, geo_config
 
@@ -163,7 +238,7 @@ def run_pipeline(
     # the dashboard only reads the saved report.
     _emit({"phase": "recommend", "message": "Building recommendations and draft fixes…"})
     advisory_config = {
-        "engine": geo_config.get("engine", "mock"),
+        "engine": (geo_config.get("audit_settings") or {}).get("geo_provider") or geo_config.get("engine", "mock"),
         "openai": geo_config.get("openai", {}),
     }
     recommendations = build_recommendations(seo_report, _load_recommendation_weights())
@@ -189,6 +264,7 @@ def run_pipeline(
         seo_recommendations=seo_recommendations,
         geo_recommendations=geo_recommendations,
         geo_assessment=geo_assessment,
+        audit_settings=geo_config.get("audit_settings", {}),
     )
     _emit({"phase": "saving", "message": "Saving report (latest + history) and PDF…"})
     _save_combined_report(combined_report)

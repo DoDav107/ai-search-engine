@@ -17,11 +17,20 @@ import { Section, sectionItem } from "./section";
 // "AI Engine / Model GEO Breakdown" — visibility tracked separately per engine/model.
 // Backward compatible: with no engine_scores, falls back to a single "—/—" row built
 // from the overall GEO score so older reports still render.
+function keyLabel(src?: string): string {
+  if (src === "env") return "saved";
+  if (src === "temporary") return "temporary";
+  return "none";
+}
+
 function EngineBreakdown({ engines, overall }: { engines: EngineScore[]; overall: number }) {
   const rows: EngineScore[] =
     engines.length > 0
-      ? engines
-      : [{ provider: "—", model: "—", geo_score: overall, visibility_rate: NaN, queries_run: 0 }];
+      ? [...engines].sort((a, b) => (a.provider + a.model).localeCompare(b.provider + b.model))
+      : [{ provider: "—", model: "—", geo_score: overall, visibility_rate: NaN, queries_run: 0, api_key_source: "none", web_grounded: undefined }];
+
+  const grounded = engines.filter((e) => !e.error && e.queries_run && e.web_grounded);
+  const ungrounded = engines.filter((e) => !e.error && e.queries_run && e.web_grounded === false);
 
   const stat = (label: string, value: string, color?: string) => (
     <div className="text-right">
@@ -39,7 +48,8 @@ function EngineBreakdown({ engines, overall }: { engines: EngineScore[]; overall
           AI Engine / Model GEO Breakdown
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          Visibility can differ across ChatGPT, Claude, Perplexity… Overall is the average of enabled engines.
+          Visibility differs across ChatGPT, Claude, Gemini, Grok, Perplexity… The headline GEO
+          score averages only the <span className="text-foreground">live-grounded</span> engines.
         </p>
       </div>
       <div className="mt-3">
@@ -48,29 +58,51 @@ function EngineBreakdown({ engines, overall }: { engines: EngineScore[]; overall
           const vis = Number.isFinite(e.visibility_rate)
             ? `${(Math.round(e.visibility_rate * 1000) / 10).toFixed(1)}%`
             : "N/A";
+          const groundBadge =
+            e.web_grounded === undefined
+              ? null
+              : e.web_grounded
+                ? { text: "🌐 Live search", cls: "text-success" }
+                : { text: "⚠ Model knowledge", cls: "text-warning" };
           return (
             <div
               key={`${e.provider}-${e.model}-${i}`}
               className="flex flex-wrap items-center justify-between gap-4 border-t border-white/10 px-5 py-3 sm:px-6"
             >
               <div className="min-w-0">
-                <div className="text-sm font-medium text-foreground">{e.provider}</div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-foreground">{e.provider}</span>
+                  {groundBadge && (
+                    <span className={`text-[10px] font-medium ${groundBadge.cls}`}>{groundBadge.text}</span>
+                  )}
+                </div>
                 <div className="truncate font-mono text-xs text-muted-foreground" title={e.model}>
                   {e.model}
                 </div>
               </div>
-              <div className="flex items-center gap-6">
+              <div className="flex items-center gap-5 sm:gap-6">
                 {stat("GEO score", `${score.toFixed(1)}%`, band(score).color)}
                 {stat("Visibility", vis)}
+                {stat("Sources", String(e.sources_count ?? 0))}
                 {stat("Queries", String(e.queries_run ?? 0))}
+                {stat("API key", keyLabel(e.api_key_source))}
               </div>
-              {e.error ? (
-                <p className="w-full text-xs text-warning">⚠ {e.error}</p>
+              {e.grounding_warning ? (
+                <p className="w-full text-xs text-warning">⚠ {e.grounding_warning}</p>
               ) : null}
+              {e.error ? <p className="w-full text-xs text-warning">⚠ {e.error}</p> : null}
             </div>
           );
         })}
       </div>
+      {engines.length > 0 && (
+        <div className="border-t border-white/10 px-5 py-3 text-xs text-muted-foreground sm:px-6">
+          Headline GEO score = average of {grounded.length} live-grounded engine(s).
+          {ungrounded.length > 0 && (
+            <> Excluded (ungrounded): {ungrounded.map((e) => `${e.provider}/${e.model}`).join(", ")}.</>
+          )}
+        </div>
+      )}
     </motion.div>
   );
 }
@@ -122,6 +154,57 @@ function ProminenceBar({ value }: { value: number }) {
         {value.toFixed(1)}%
       </span>
     </div>
+  );
+}
+
+function QualityMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="mt-1 font-mono text-lg tabular-nums">{value}</div>
+    </div>
+  );
+}
+
+// "GEO Quality Signals" — beyond mention/no-mention: how the brand is mentioned.
+// Rendered only when the report carries quality signals (older reports skip cleanly).
+function QualitySignals({ measured }: { measured: GeoResult[] }) {
+  const rows = measured.filter((r) => r.per_query_geo_score != null);
+  if (rows.length === 0) return null;
+
+  const mentioned = rows.filter((r) => r.brand_mentioned);
+  const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+  const avgSent = avg(mentioned.map((r) => r.sentiment_score ?? 0));
+  const pos = mentioned.filter((r) => r.sentiment_label === "positive").length;
+  const neu = mentioned.filter((r) => r.sentiment_label === "neutral").length;
+  const neg = mentioned.filter((r) => r.sentiment_label === "negative").length;
+  const avgRec = avg(mentioned.map((r) => r.recommendation_score ?? 0));
+  const citeCov = (rows.filter((r) => r.citations_present).length / rows.length) * 100;
+  const compTotal = rows.reduce((a, r) => a + (r.competitor_count ?? 0), 0);
+  const ranks = rows.map((r) => r.brand_rank_position).filter((v): v is number => typeof v === "number");
+  const avgRank = ranks.length ? avg(ranks) : null;
+
+  return (
+    <motion.div variants={sectionItem} className={`${GLASS} mt-6 p-5 sm:p-6`}>
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        GEO Quality Signals
+      </p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Not just whether the brand is mentioned, but how — sentiment, recommendation, citations, rank.
+      </p>
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <QualityMetric label="Avg sentiment" value={avgSent === null ? "N/A" : `${avgSent >= 0 ? "+" : ""}${avgSent.toFixed(2)}`} />
+        <QualityMetric label="Avg recommendation" value={avgRec === null ? "N/A" : `${Math.round(avgRec * 100)}%`} />
+        <QualityMetric label="Citation coverage" value={`${Math.round(citeCov)}%`} />
+        <QualityMetric label="Competitor mentions" value={String(compTotal)} />
+        <QualityMetric label="Avg brand rank" value={avgRank === null ? "N/A" : `#${avgRank.toFixed(1)}`} />
+      </div>
+      <p className="mt-3 text-xs text-muted-foreground">
+        Sentiment of {mentioned.length} brand mention(s):{" "}
+        <span className="text-success">🟢 {pos} positive</span> ·{" "}
+        <span>⚪ {neu} neutral</span> · <span className="text-danger">🔴 {neg} negative</span>.
+      </p>
+    </motion.div>
   );
 }
 
@@ -184,6 +267,15 @@ function QueryRow({ r }: { r: GeoResult }) {
                   </span>
                 </div>
               )}
+              {(r.per_query_geo_score != null || (r.sentiment_label && r.sentiment_label !== "unknown")) && (
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  <span>Sentiment: <span className="text-foreground/90">{r.sentiment_label ?? "unknown"}</span></span>
+                  <span>Recommendation: <span className="text-foreground/90">{r.recommendation_strength ?? "unknown"}</span></span>
+                  <span>Brand rank: <span className="text-foreground/90">{r.brand_rank_position != null ? `#${r.brand_rank_position}` : "N/A"}</span></span>
+                  <span>Citations: <span className="text-foreground/90">{r.citations_present ? `yes (${r.citation_count ?? 0})` : "no"}</span></span>
+                  <span>Quality score: <span className="text-foreground/90">{r.per_query_geo_score != null ? `${r.per_query_geo_score.toFixed(1)}%` : "N/A"}</span></span>
+                </div>
+              )}
               {noAnswer ? (
                 <p className="rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-foreground/90">
                   This query returned no answer{r.error ? ` (${r.error})` : ""} — excluded
@@ -234,6 +326,8 @@ export function GeoSection({ report }: { report: Report }) {
   const sov = report.geo_report?.share_of_voice ?? [];
   const sovHeadline = report.geo_report?.sov_headline ?? "";
   const geoScore = report.geo_report?.geo_score ?? report.geo_score ?? 0;
+  const selectedProvider = report.audit_settings?.geo_provider;
+  const selectedModel = report.audit_settings?.geo_model;
 
   const { measured, noAnswer, mentioned, visibility } = useMemo(() => {
     const measured = results.filter((r) => !isNoAnswer(r));
@@ -250,6 +344,14 @@ export function GeoSection({ report }: { report: Report }) {
       title="GEO Report"
       subtitle="How often AI engines surface the brand for target queries"
     >
+      {(selectedProvider || selectedModel) && (
+        <motion.p variants={sectionItem} className="mb-4 text-sm text-muted-foreground">
+          Measured using:{" "}
+          <span className="font-medium text-foreground">
+            {[selectedProvider, selectedModel].filter(Boolean).join(" / ")}
+          </span>
+        </motion.p>
+      )}
       {results.length === 0 && (
         <motion.div variants={sectionItem} className={`${GLASS} mb-6 p-5 text-sm text-muted-foreground sm:p-6`}>
           No GEO query results are stored in this report yet. Run a new audit from the dashboard.
@@ -304,6 +406,9 @@ export function GeoSection({ report }: { report: Report }) {
 
       {/* AI Engine / Model GEO Breakdown */}
       <EngineBreakdown engines={report.geo_report?.engine_scores ?? []} overall={geoScore} />
+
+      {/* GEO Quality Signals — sentiment, recommendation, citations, rank */}
+      <QualitySignals measured={measured} />
 
       {/* Share of Voice — ranked brands (subject + competitors) by presence */}
       {sov.length > 0 && (() => {

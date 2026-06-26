@@ -28,6 +28,21 @@ export type GeoResult = {
   // Which AI engine/model produced this answer (optional — absent on older reports).
   provider?: string;
   model?: string;
+  // GEO quality signals (optional — absent on older reports; render as "unknown"/"N/A").
+  sentiment_label?: "positive" | "neutral" | "negative" | "unknown" | string;
+  sentiment_score?: number;
+  recommendation_strength?: "strong" | "moderate" | "weak" | "none" | "unknown" | string;
+  recommendation_score?: number;
+  brand_rank_position?: number | null;
+  competitor_count?: number;
+  competitor_names_mentioned?: string[];
+  citation_count?: number;
+  citations_present?: boolean;
+  answer_accuracy_label?: "accurate" | "partially_accurate" | "inaccurate" | "unknown" | string;
+  answer_accuracy_notes?: string | null;
+  per_query_geo_score?: number | null;
+  web_grounded?: boolean;
+  sources_count?: number;
 };
 
 // Per engine/model GEO breakdown. Visibility differs across ChatGPT, Claude, etc.
@@ -39,6 +54,10 @@ export type EngineScore = {
   queries_run: number;
   brand_mentions?: number;
   avg_prominence?: number;
+  api_key_source?: "env" | "temporary" | "none" | string;
+  web_grounded?: boolean;
+  sources_count?: number;
+  grounding_warning?: string | null;
   error?: string | null;
 };
 
@@ -83,6 +102,15 @@ export type Report = {
   seo_recommendations?: Recommendation[];
   geo_recommendations?: Recommendation[];
   geo_assessment?: string;
+  audit_settings?: {
+    client?: string;
+    brand?: string;
+    domain?: string;
+    geo_provider?: string;
+    geo_model?: string;
+    api_key_source?: "env" | "temporary" | "none" | string;
+    queries_count?: number;
+  };
   _generated_at?: string;
   error?: string;
 };

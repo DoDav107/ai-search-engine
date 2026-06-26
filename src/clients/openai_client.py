@@ -38,11 +38,6 @@ _MAX_CALLS = int(_cfg.get("max_calls_per_run", 5))
 # ---------------------------------------------------------------------------
 
 _api_key = os.environ.get("OPENAI_API_KEY", "").strip()
-if not _api_key:
-    raise RuntimeError(
-        "OPENAI_API_KEY is not set. "
-        "Copy .env.example to .env and add your key, or export it in your shell."
-    )
 
 # ---------------------------------------------------------------------------
 # Client class
@@ -51,8 +46,14 @@ if not _api_key:
 class OpenAIClient:
     """Thin wrapper around the OpenAI chat completions API with a per-run call cap."""
 
-    def __init__(self) -> None:
-        self._client = openai.OpenAI(api_key=_api_key, timeout=30, max_retries=2)
+    def __init__(self, api_key: str | None = None) -> None:
+        selected_key = (api_key or _api_key).strip()
+        if not selected_key:
+            raise RuntimeError(
+                "OPENAI_API_KEY is not set. "
+                "Copy .env.example to .env and add your key, or provide a temporary key for this audit."
+            )
+        self._client = openai.OpenAI(api_key=selected_key, timeout=30, max_retries=2)
         self.call_count: int = 0
 
     def chat(
@@ -203,4 +204,18 @@ def _extract_search_metadata(response: Any) -> tuple[bool, list[dict[str, str]]]
 # Module-level singleton — call cap is shared across the whole pipeline run
 # ---------------------------------------------------------------------------
 
-client = OpenAIClient()
+class _MissingOpenAIClient:
+    def _raise(self) -> None:
+        raise RuntimeError(
+            "OPENAI_API_KEY is not set. "
+            "Copy .env.example to .env and add your key, or provide a temporary key for this audit."
+        )
+
+    def chat(self, *args: Any, **kwargs: Any) -> str:
+        self._raise()
+
+    def respond_with_web_search(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        self._raise()
+
+
+client = OpenAIClient() if _api_key else _MissingOpenAIClient()

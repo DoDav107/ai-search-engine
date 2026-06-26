@@ -10,29 +10,76 @@ brand_aliases:
   - "Converse"
 competitors: []
 
+geo:
+  default_provider: "openai"
+  default_model: "gpt-5.5"
+  providers:
+    openai:
+      label: "OpenAI"
+      env_key_name: "OPENAI_API_KEY"
+      models:
+        - id: "gpt-5.5"
+          label: "GPT-5.5"
+        - id: "gpt-4.1"
+          label: "GPT-4.1"
+        - id: "gpt-4o"
+          label: "GPT-4o"
+    anthropic:
+      label: "Claude"
+      env_key_name: "ANTHROPIC_API_KEY"
+      models:
+        - id: "claude-sonnet-4"
+          label: "Claude Sonnet 4"
+        - id: "claude-opus-4"
+          label: "Claude Opus 4"
+    perplexity:
+      label: "Perplexity"
+      env_key_name: "PERPLEXITY_API_KEY"
+      models:
+        - id: "sonar"
+          label: "Sonar"
+        - id: "sonar-pro"
+          label: "Sonar Pro"
+    mock:
+      label: "Mock / Demo"
+      env_key_name: null
+      models:
+        - id: "mock-default"
+          label: "Mock default"
+
 # AI engines/models to measure GEO visibility against. Brand visibility differs across
-# ChatGPT, Claude, Perplexity, etc., so each enabled engine is run separately and gets
-# its own GEO score; the overall GEO score is the average of the enabled engines.
-# Only "mock" (offline) and "openai" (live, web search) are implemented today;
-# "anthropic"/"perplexity" are placeholders — leave them disabled until a client + API
-# key exist (an enabled-but-unimplemented engine fails loudly with a clear message).
-# Operational params for the openai provider (tokens/timeout/reasoning/web search) come
-# from the `openai:` and `web_search:` blocks below.
+# ChatGPT, Claude, Gemini, Grok, Perplexity, etc., so each ENABLED engine is run
+# separately and gets its own GEO score. The headline overall GEO score is the average
+# of the enabled, WEB-GROUNDED engines only (ungrounded engines like DeepSeek still
+# appear in the table but are excluded from the live-visibility headline).
+# Implemented providers: openai, anthropic, google, xai, perplexity (all live-grounded),
+# deepseek (ungrounded — no web search exists), mock (offline). An enabled engine with a
+# missing API key fails loudly naming its env var. Operational params for the openai
+# provider come from the `openai:`/`web_search:` blocks below.
 # If this `engines` list is omitted, the tool falls back to the legacy single-engine
 # behaviour derived from `engine` / `openai.mode` below (backward compatible).
 engines:
-  - provider: "mock"
-    model: "mock-default"
-    enabled: true
-  - provider: "openai"
-    model: "gpt-4o-mini"
-    enabled: false
-  - provider: "anthropic"
-    model: "claude-sonnet"
-    enabled: false
-  - provider: "perplexity"
-    model: "sonar"
-    enabled: false
+  # provider + model are CONFIG ONLY (never hardcoded in client/scoring logic).
+  # Model strings drift — confirm the exact current id on each provider's models page.
+  # Web search is MANDATORY where the provider supports it (see SUPPORTS_WEB_SEARCH in
+  # src/agents/geo_agent.py): openai, anthropic, google, xai, perplexity are live-grounded;
+  # deepseek runs ungrounded; mock is offline. Per-provider key env vars:
+  #   OPENAI_API_KEY / ANTHROPIC_API_KEY / GOOGLE_API_KEY / XAI_API_KEY /
+  #   PERPLEXITY_API_KEY / DEEPSEEK_API_KEY.
+  - { provider: "mock",       model: "mock-default",       enabled: true }
+  - { provider: "openai",     model: "gpt-5.5",            enabled: false }
+  - { provider: "openai",     model: "gpt-5.2",            enabled: false }
+  - { provider: "openai",     model: "gpt-4o",             enabled: false }
+  - { provider: "anthropic",  model: "claude-opus-4-8",    enabled: false }
+  - { provider: "anthropic",  model: "claude-sonnet-4-6",  enabled: false }
+  - { provider: "google",     model: "gemini-3-pro",       enabled: false }
+  - { provider: "google",     model: "gemini-2.5-flash",   enabled: false }
+  - { provider: "deepseek",   model: "deepseek-chat",      enabled: false }
+  - { provider: "deepseek",   model: "deepseek-reasoner",  enabled: false }
+  - { provider: "xai",        model: "grok-4",             enabled: false }
+  - { provider: "xai",        model: "grok-3",             enabled: false }
+  - { provider: "perplexity", model: "sonar",              enabled: false }
+  - { provider: "perplexity", model: "sonar-pro",          enabled: false }
 
 queries:
   - "What are the best running shoe brands?"

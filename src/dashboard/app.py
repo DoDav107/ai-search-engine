@@ -8,7 +8,9 @@ entry point for running the pipeline.
 from __future__ import annotations
 
 import json
+import os
 import sys
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from html import escape
 from pathlib import Path
@@ -437,6 +439,45 @@ inject_css()
 # works with no input.
 # ---------------------------------------------------------------------------
 MAX_QUERIES = 10
+
+
+def _geo_options() -> dict[str, Any]:
+    try:
+        from src.reporting.geo_options import load_geo_options
+        return load_geo_options(str(REPO_ROOT / "config" / "geo_config.yaml"))
+    except Exception:
+        return {
+            "default_provider": "openai",
+            "default_model": "gpt-5.5",
+            "providers": {
+                "openai": {
+                    "label": "OpenAI",
+                    "env_key_name": "OPENAI_API_KEY",
+                    "models": [{"id": "gpt-5.5", "label": "GPT-5.5"}],
+                },
+                "mock": {
+                    "label": "Mock / Demo",
+                    "env_key_name": None,
+                    "models": [{"id": "mock-default", "label": "Mock default"}],
+                },
+            },
+        }
+
+
+@contextmanager
+def _temporary_provider_key(provider: str, key: str | None):
+    if provider != "openai" or not key:
+        yield
+        return
+    previous = os.environ.get("OPENAI_API_KEY")
+    os.environ["OPENAI_API_KEY"] = key
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("OPENAI_API_KEY", None)
+        else:
+            os.environ["OPENAI_API_KEY"] = previous
 report_path = REPORTS_DIR / "latest_report.json"
 
 
@@ -486,6 +527,47 @@ with st.sidebar:
             "Target queries (one per line)", key="na_queries", height=130,
             placeholder="What are the best running shoe brands?\nMost popular sneakers right now?",
         )
+        _geo_opts = _geo_options()
+        _providers: dict[str, Any] = _geo_opts.get("providers") or {}
+        _provider_ids = list(_providers.keys())
+        _default_provider = _geo_opts.get("default_provider") if _geo_opts.get("default_provider") in _providers else (_provider_ids[0] if _provider_ids else "openai")
+        _provider_labels = {pid: str(cfg.get("label") or pid) for pid, cfg in _providers.items()}
+        na_provider = st.selectbox(
+            "AI provider",
+            _provider_ids,
+            index=_provider_ids.index(_default_provider) if _default_provider in _provider_ids else 0,
+            format_func=lambda pid: _provider_labels.get(pid, pid),
+            key="na_geo_provider",
+        )
+        _models = list((_providers.get(na_provider) or {}).get("models") or [])
+        _model_ids = [str(m.get("id")) for m in _models if m.get("id")]
+        _model_labels = {str(m.get("id")): str(m.get("label") or m.get("id")) for m in _models if m.get("id")}
+        _default_model = _geo_opts.get("default_model") if _geo_opts.get("default_model") in _model_ids else (_model_ids[0] if _model_ids else "")
+        na_model = st.selectbox(
+            "AI model",
+            _model_ids,
+            index=_model_ids.index(_default_model) if _default_model in _model_ids else 0,
+            format_func=lambda mid: _model_labels.get(mid, mid),
+            key=f"na_geo_model_{na_provider}",
+        )
+        na_api_key_mode = "env"
+        na_temporary_key = ""
+        if na_provider != "mock":
+            na_api_key_mode = st.radio(
+                "API key mode",
+                ["env", "temporary"],
+                format_func=lambda v: "Use saved server key from .env" if v == "env" else "Provide temporary key for this audit",
+                horizontal=False,
+                key="na_api_key_mode",
+            )
+            if na_api_key_mode == "temporary":
+                na_temporary_key = st.text_input(
+                    "Temporary API key",
+                    type="password",
+                    key="na_temporary_api_key",
+                    placeholder=str((_providers.get(na_provider) or {}).get("env_key_name") or "API key"),
+                )
+            st.caption("Temporary keys are used only for this audit and are not saved to reports, config, logs, or git.")
         _q_count = len([q for q in (na_queries or "").splitlines() if q.strip()])
         st.caption(f"{_q_count}/{MAX_QUERIES} queries · each runs a live web-search measurement (paid).")
         na_confirm = st.checkbox(
@@ -493,13 +575,28 @@ with st.sidebar:
         )
         if st.button("Run Audit", type="primary", width="stretch", key="na_run"):
             _c, _b, _u, _qs, _errs = _validate_audit(na_client, na_brand, na_url, na_queries)
+            if not na_provider:
+                _errs.append("Choose an AI provider.")
+            if not na_model:
+                _errs.append("Choose an AI model.")
+            if na_api_key_mode == "temporary" and na_provider != "mock" and not na_temporary_key.strip():
+                _errs.append("Enter a temporary API key or choose the saved server key.")
             if not na_confirm:
                 _errs.append("Tick the confirmation box before running.")
             if _errs:
                 for _e in _errs:
                     st.error(_e)
             else:
-                st.session_state["pending_audit"] = {"client": _c, "brand": _b, "url": _u, "queries": _qs}
+                st.session_state["pending_audit"] = {
+                    "client": _c,
+                    "brand": _b,
+                    "url": _u,
+                    "queries": _qs,
+                    "geo_provider": na_provider,
+                    "geo_model": na_model,
+                    "api_key_mode": na_api_key_mode,
+                    "temporary_api_key": na_temporary_key.strip() if na_api_key_mode == "temporary" else "",
+                }
                 st.rerun()
 
 
@@ -551,8 +648,14 @@ if _pending:
             brand=_pending["brand"],
             base_url=_pending["url"],
             queries=_pending["queries"],
+            geo_provider=_pending.get("geo_provider"),
+            geo_model=_pending.get("geo_model"),
+            api_key_source="temporary" if _pending.get("api_key_mode") == "temporary" else "env",
         )
-        run_pipeline(seo_config=_seo_cfg, geo_config=_geo_cfg, progress=_audit_progress)
+        if _pending.get("api_key_mode") == "temporary" and _pending.get("temporary_api_key"):
+            _geo_cfg["_temporary_api_key"] = _pending.get("temporary_api_key")
+        with _temporary_provider_key(_pending.get("geo_provider", ""), _pending.get("temporary_api_key")):
+            run_pipeline(seo_config=_seo_cfg, geo_config=_geo_cfg, progress=_audit_progress)
         _status.update(label="Audit complete — loading report…", state="complete")
         st.session_state.pop("pending_audit", None)
         st.cache_data.clear()
@@ -1072,23 +1175,37 @@ else:
 # GEO Report
 # ---------------------------------------------------------------------------
 st.markdown("## 🤖 GEO Report")
+audit_settings = combined.get("audit_settings") or {}
+if audit_settings.get("geo_provider") or audit_settings.get("geo_model"):
+    st.caption(
+        "Measured using: "
+        f"**{audit_settings.get('geo_provider', '')} / {audit_settings.get('geo_model', '')}** "
+        f"(API key: {audit_settings.get('api_key_source', 'env')})"
+    )
 
 # AI engine / model breakdown — brand visibility differs across ChatGPT, Claude,
 # Perplexity, etc. Each enabled engine is scored separately; overall = their average.
 engine_scores = geo.get("engine_scores") or []
 if engine_scores:
     st.markdown("#### AI Engine / Model GEO Breakdown")
+
+    def _key_label(src: str) -> str:
+        return {"env": "saved", "temporary": "temporary", "none": "none"}.get(src, src or "none")
+
+    # Group rows by provider so multiple sub-models read together.
+    _sorted = sorted(engine_scores, key=lambda e: (e.get("provider", ""), e.get("model", "")))
     breakdown_rows = [
         {
             "Provider": e.get("provider", ""),
             "Model": e.get("model", ""),
+            "Grounding": "🌐 Live search" if e.get("web_grounded") else "⚠ Model knowledge",
+            "Sources": int(e.get("sources_count") or 0),
             "GEO score": float(e.get("geo_score") or 0.0),
             "Visibility": round((e.get("visibility_rate") or 0.0) * 100, 1),
             "Queries run": int(e.get("queries_run") or 0),
-            "Brand mentions": int(e.get("brand_mentions") or 0),
-            "Avg prominence": round((e.get("avg_prominence") or 0.0) * 100, 1),
+            "API key": _key_label(e.get("api_key_source", "none")),
         }
-        for e in engine_scores
+        for e in _sorted
     ]
     st.dataframe(
         pd.DataFrame(breakdown_rows),
@@ -1097,12 +1214,19 @@ if engine_scores:
         column_config={
             "GEO score": st.column_config.NumberColumn("GEO score", format="%.1f%%"),
             "Visibility": st.column_config.NumberColumn("Visibility", format="%.1f%%"),
-            "Avg prominence": st.column_config.NumberColumn("Avg prominence", format="%.1f%%"),
         },
     )
-    ran = [e for e in engine_scores if not e.get("error") and e.get("queries_run")]
-    if len(ran) > 1:
-        st.caption(f"Overall GEO score = average of {len(ran)} enabled engine(s).")
+    grounded = [e for e in engine_scores if not e.get("error") and e.get("queries_run") and e.get("web_grounded")]
+    ungrounded = [e for e in engine_scores if not e.get("error") and e.get("queries_run") and not e.get("web_grounded")]
+    st.caption(
+        f"Headline GEO score = average of {len(grounded)} live-grounded engine(s). "
+        "🌐 = live web search · ⚠ = model knowledge only."
+    )
+    if ungrounded:
+        names = ", ".join(f"{e.get('provider')}/{e.get('model')}" for e in ungrounded)
+        st.caption(f"Excluded from the headline (ungrounded): {names}.")
+    for e in (e for e in engine_scores if e.get("grounding_warning")):
+        st.caption(f"⚠️ {e.get('provider')}/{e.get('model')}: {e.get('grounding_warning')}")
     for e in (e for e in engine_scores if e.get("error")):
         st.caption(f"⚠️ {e.get('provider')}/{e.get('model')} not run: {e.get('error')}")
 
@@ -1343,25 +1467,25 @@ def _render_recs(recs: list[dict], key_prefix: str) -> None:
         pr = r.get("priority", "—")
         color = _PRIORITY_COLOR.get(pr, "#64748b")
         draft = (r.get("draft") or "").strip()
-        st.markdown(
-            f"""
-            <div class="rec" style="border-left-color:{color};">
-                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-                    <span class="rtitle">{escape(r.get('title', 'Untitled'))}</span>
-                    {_badge_html(pr.upper(), color)}
-                </div>
-                <div class="rscope">{escape(r.get('scope', ''))}</div>
-                <div class="field"><b>⚠️ Issue:</b> {escape(r.get('issue', ''))}</div>
-                <div class="field"><b>💡 Why it matters:</b> {escape(r.get('why_it_matters', ''))}</div>
-                <div class="field"><b>✅ Recommendation:</b> {escape(r.get('recommendation', ''))}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        if draft:
-            with st.expander("📝 Draft fix"):
-                _render_draft(draft)
-                _copy_button(draft, key=f"{key_prefix}_{i}")
+        with st.container(border=True):
+            h1, h2 = st.columns([0.82, 0.18], vertical_alignment="center")
+            h1.markdown(f"#### {r.get('title', 'Untitled')}")
+            h2.markdown(
+                f"<div style='text-align:right'>{_badge_html(str(pr).upper(), color)}</div>",
+                unsafe_allow_html=True,
+            )
+            if r.get("scope"):
+                st.caption(str(r.get("scope")))
+            st.markdown("**Issue**")
+            st.write(r.get("issue") or "No issue text stored for this recommendation.")
+            st.markdown("**Why it matters**")
+            st.write(r.get("why_it_matters") or "No rationale stored for this recommendation.")
+            st.markdown("**Recommendation**")
+            st.write(r.get("recommendation") or "No recommendation text stored for this item.")
+            if draft:
+                with st.expander("Draft fix"):
+                    _render_draft(draft)
+                    _copy_button(draft, key=f"{key_prefix}_{i}")
 
 
 st.markdown("## 🛠 SEO Recommendations")

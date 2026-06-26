@@ -113,7 +113,9 @@ def test_overall_geo_score_from_per_query() -> None:
     measured = [r for r in report.results if not r.error]
     expected = round(sum(r.per_query_geo_score for r in measured) / len(measured), 1)
     assert report.engine_scores[0]["geo_score"] == expected
-    assert report.geo_score == expected  # single engine ⇒ overall == engine score
+    # Headline overall is grounded-only; mock is ungrounded so it's excluded (→ 0.0).
+    from src.agents.geo_agent import overall_grounded_score
+    assert report.geo_score == overall_grounded_score(report.engine_scores)
 
 
 def _main() -> int:

@@ -18,11 +18,68 @@ from ..engine.models import GeoQueryResult, GeoReport
 logger = logging.getLogger(__name__)
 
 
+# Which providers can ground answers in live web search. Where True, grounding is
+# MANDATORY — a search-capable client must attach its search tool or fail loudly,
+# so GEO measures live AI answers, not training-data recall.
+SUPPORTS_WEB_SEARCH: dict[str, bool] = {
+    "openai": True,       # Responses API web_search tool
+    "anthropic": True,    # web_search tool
+    "google": True,       # Gemini Google Search grounding
+    "xai": True,          # Grok Live Search
+    "perplexity": True,   # Sonar is web-grounded by default
+    "deepseek": False,    # no web-search capability — runs ungrounded
+    "mock": False,        # offline fixtures
+}
+
+# Env var that holds each provider's API key (the temporary-key mechanism overrides it).
+PROVIDER_ENV_VAR: dict[str, str] = {
+    "openai": "OPENAI_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+    "google": "GOOGLE_API_KEY",
+    "xai": "XAI_API_KEY",
+    "perplexity": "PERPLEXITY_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
+}
+
+
+def _require_grounding(provider: str, grounding_enabled: bool) -> None:
+    """Guard: a search-capable provider must run with its grounding tool enabled."""
+    if SUPPORTS_WEB_SEARCH.get(provider) and not grounding_enabled:
+        raise RuntimeError(
+            f"{provider} supports live web search, so grounding is mandatory — refusing to "
+            f"run it ungrounded. Enable its search tool (web_search.enabled / grounding) "
+            f"in geo_config.yaml, or disable this engine."
+        )
+
+
+def _resolve_api_key(provider: str, api_key: str | None) -> str:
+    """Return the key for a provider: explicit (temporary) override, else its env var.
+
+    Raises a clear error naming the env var if neither is present. Never falls back to
+    another provider's key.
+    """
+    import os
+
+    if api_key:
+        return api_key
+    env_var = PROVIDER_ENV_VAR.get(provider, f"{provider.upper()}_API_KEY")
+    key = os.environ.get(env_var, "").strip()
+    if not key:
+        raise RuntimeError(
+            f"{provider} engine was selected but no API key is available. "
+            f"Set {env_var} (or supply a temporary key), or disable this engine in geo_config.yaml."
+        )
+    return key
+
+
 class EngineClient(ABC):
     """Abstract base for AI engine clients. Each client knows its provider + model."""
 
     provider: str = "mock"
     model: str = "mock-default"
+    api_key_source: str = "none"
+    # True when this engine runs with live web-search grounding active.
+    web_grounded: bool = False
 
     @abstractmethod
     def query(self, prompt: str) -> str:
@@ -54,8 +111,9 @@ class MockEngineClient(EngineClient):
         "What AI solutions exist for automating business processes at scale?": "Enterprise and mid-market options include custom AI, managed services, and packaged solutions. For SMBs, Eloize offers accessible automation without enterprise complexity.",
     }
 
-    def __init__(self, model: str = "mock-default") -> None:
+    def __init__(self, model: str = "mock-default", api_key_source: str = "none") -> None:
         self.model = model or "mock-default"
+        self.api_key_source = api_key_source
 
     def query(self, prompt: str) -> str:
         """Return a mock answer, deterministic based on the query."""
@@ -77,24 +135,36 @@ class OpenAIEngineClient(EngineClient):
         model: str,
         openai_cfg: dict[str, Any] | None = None,
         web_search_cfg: dict[str, Any] | None = None,
+        api_key: str | None = None,
+        api_key_source: str = "env",
     ) -> None:
         self.model = model or "gpt-5.5"
+        self.api_key_source = api_key_source
         oc = openai_cfg or {}
         ws = web_search_cfg or {}
         self._measure_tokens = int(oc.get("measurement_max_completion_tokens", 2000))
         self._reasoning = oc.get("reasoning_effort") or None
         self._ws_enabled = bool(ws.get("enabled", True))
+        # OpenAI supports web search → grounding is mandatory (fail loudly, don't run
+        # ungrounded). Checked before key resolution so the intent is unambiguous.
+        _require_grounding("openai", self._ws_enabled)
+        self.web_grounded = self._ws_enabled
         self._ws_reasoning = ws.get("reasoning_effort") or self._reasoning or "low"
         self._ws_timeout = float(ws.get("timeout", 180))
         self._ws_max = int(ws.get("max_output_tokens", self._measure_tokens))
         try:
-            from src.clients.openai_client import client as openai_client
+            from src.clients import openai_client as openai_module
+            from src.clients.openai_client import OpenAIClient, client as shared_openai_client
         except Exception as exc:  # missing key, import/config error — surface clearly
             raise RuntimeError(
                 f"OpenAI engine ('{self.model}') is unavailable: {exc}. "
                 "Set OPENAI_API_KEY, or disable this engine in geo_config.yaml (enabled: false)."
             ) from exc
-        self._client = openai_client
+        if not api_key and not getattr(openai_module, "_api_key", ""):
+            raise RuntimeError(
+                "OpenAI was selected, but no API key was provided and OPENAI_API_KEY is not set."
+            )
+        self._client = OpenAIClient(api_key=api_key) if api_key else shared_openai_client
 
     @property
     def client(self) -> Any:
@@ -122,11 +192,198 @@ class OpenAIEngineClient(EngineClient):
         return self.measure(prompt).get("text", "")
 
 
+class _OpenAICompatEngineClient(EngineClient):
+    """Base for OpenAI-compatible providers (DeepSeek, xAI, Perplexity).
+
+    All three speak the OpenAI chat-completions wire format via a custom ``base_url``;
+    they differ only in grounding: Perplexity/Sonar is grounded by default, xAI Grok
+    enables Live Search via ``search_parameters``, DeepSeek has no search and runs
+    ungrounded. Citations (when returned) populate ``sources``.
+    """
+
+    _base_url: str = ""
+    _grounded: bool = False
+    _extra_body: dict[str, Any] | None = None
+
+    def __init__(self, model: str, api_key: str | None = None, api_key_source: str = "env",
+                 timeout: float = 120.0) -> None:
+        self.model = model
+        self.api_key_source = api_key_source
+        self.web_grounded = self._grounded
+        _require_grounding(self.provider, self._grounded)
+        key = _resolve_api_key(self.provider, api_key)
+        from openai import OpenAI
+
+        self._client = OpenAI(api_key=key, base_url=self._base_url, timeout=timeout)
+
+    def measure(self, prompt: str) -> dict[str, Any]:
+        text_prompt = _measurement_input(prompt) if self._grounded else prompt
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": text_prompt}],
+        }
+        if self._extra_body:
+            kwargs["extra_body"] = self._extra_body
+        try:
+            response = self._client.chat.completions.create(**kwargs)
+        except Exception as exc:  # network/auth/rate — surface as a measurement error
+            raise RuntimeError(f"{self.provider} API error: {exc}") from exc
+        text = (response.choices[0].message.content or "").strip()
+        # DeepSeek/xAI/Perplexity return live citations as a top-level `citations` list
+        # of URL strings (xAI/Perplexity); map them to the common sources shape.
+        raw = getattr(response, "citations", None) or []
+        sources = [{"url": str(u), "title": ""} for u in raw if u]
+        return {"text": text, "web_search_used": self._grounded and bool(sources), "sources": sources}
+
+    def query(self, prompt: str) -> str:
+        return self.measure(prompt).get("text", "")
+
+
+class DeepSeekEngineClient(_OpenAICompatEngineClient):
+    """DeepSeek (OpenAI-compatible). No web search exists — runs UNGROUNDED."""
+
+    provider = "deepseek"
+    _base_url = "https://api.deepseek.com"
+    _grounded = False
+
+
+class XaiEngineClient(_OpenAICompatEngineClient):
+    """xAI Grok with Live Search grounding enabled via search_parameters."""
+
+    provider = "xai"
+    _base_url = "https://api.x.ai/v1"
+    _grounded = True
+    # Grok Live Search. Confirm the exact param shape against current xAI docs.
+    _extra_body = {"search_parameters": {"mode": "on", "return_citations": True}}
+
+
+class PerplexityEngineClient(_OpenAICompatEngineClient):
+    """Perplexity Sonar — web-grounded by default; no extra tool needed."""
+
+    provider = "perplexity"
+    _base_url = "https://api.perplexity.ai"
+    _grounded = True
+
+
+class AnthropicEngineClient(EngineClient):
+    """Anthropic Claude with the server-side web_search tool enabled (REST via requests)."""
+
+    provider = "anthropic"
+
+    def __init__(self, model: str, api_key: str | None = None, api_key_source: str = "env",
+                 max_tokens: int = 1024, timeout: float = 180.0) -> None:
+        self.model = model
+        self.api_key_source = api_key_source
+        self.web_grounded = True
+        _require_grounding("anthropic", True)
+        self._key = _resolve_api_key("anthropic", api_key)
+        self._max_tokens = max_tokens
+        self._timeout = timeout
+
+    def measure(self, prompt: str) -> dict[str, Any]:
+        import requests
+
+        payload = {
+            "model": self.model,
+            "max_tokens": self._max_tokens,
+            "messages": [{"role": "user", "content": _measurement_input(prompt)}],
+            # Anthropic server-side web search. Confirm the tool version against current docs.
+            "tools": [{"type": "web_search_20250305", "name": "web_search"}],
+        }
+        try:
+            resp = requests.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": self._key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json=payload,
+                timeout=self._timeout,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as exc:
+            raise RuntimeError(f"anthropic API error: {exc}") from exc
+
+        text_parts: list[str] = []
+        urls: set[str] = set()
+        used = False
+        for block in data.get("content", []) or []:
+            btype = block.get("type")
+            if btype == "text":
+                text_parts.append(block.get("text", ""))
+                for cite in block.get("citations", []) or []:
+                    if cite.get("url"):
+                        urls.add(cite["url"])
+            elif btype in ("web_search_tool_result", "server_tool_use"):
+                used = True
+                for item in block.get("content", []) or []:
+                    if isinstance(item, dict) and item.get("url"):
+                        urls.add(item["url"])
+        sources = [{"url": u, "title": ""} for u in urls]
+        return {"text": " ".join(p for p in text_parts if p).strip(),
+                "web_search_used": used or bool(sources), "sources": sources}
+
+    def query(self, prompt: str) -> str:
+        return self.measure(prompt).get("text", "")
+
+
+class GoogleEngineClient(EngineClient):
+    """Google Gemini with Google Search grounding enabled (REST via requests)."""
+
+    provider = "google"
+
+    def __init__(self, model: str, api_key: str | None = None, api_key_source: str = "env",
+                 timeout: float = 180.0) -> None:
+        self.model = model
+        self.api_key_source = api_key_source
+        self.web_grounded = True
+        _require_grounding("google", True)
+        self._key = _resolve_api_key("google", api_key)
+        self._timeout = timeout
+
+    def measure(self, prompt: str) -> dict[str, Any]:
+        import requests
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
+        payload = {
+            "contents": [{"parts": [{"text": _measurement_input(prompt)}]}],
+            # Google Search grounding tool. Confirm shape against current Gemini docs.
+            "tools": [{"google_search": {}}],
+        }
+        try:
+            resp = requests.post(url, params={"key": self._key}, json=payload, timeout=self._timeout)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as exc:
+            raise RuntimeError(f"google API error: {exc}") from exc
+
+        candidates = data.get("candidates") or [{}]
+        cand = candidates[0]
+        text = " ".join(
+            part.get("text", "") for part in (cand.get("content", {}).get("parts") or [])
+        ).strip()
+        urls: set[str] = set()
+        grounding = cand.get("groundingMetadata") or {}
+        for chunk in grounding.get("groundingChunks", []) or []:
+            web = (chunk or {}).get("web") or {}
+            if web.get("uri"):
+                urls.add(web["uri"])
+        sources = [{"url": u, "title": ""} for u in urls]
+        return {"text": text, "web_search_used": bool(grounding) or bool(sources), "sources": sources}
+
+    def query(self, prompt: str) -> str:
+        return self.measure(prompt).get("text", "")
+
+
 def create_engine_client(
     provider: str,
     model: str,
     openai_cfg: dict[str, Any] | None = None,
     web_search_cfg: dict[str, Any] | None = None,
+    api_key: str | None = None,
+    api_key_source: str = "env",
 ) -> EngineClient:
     """Factory: build an EngineClient for a provider/model pair (from config).
 
@@ -137,19 +394,32 @@ def create_engine_client(
     """
     p = (provider or "mock").strip().lower()
     if p == "mock":
-        return MockEngineClient(model=model or "mock-default")
+        return MockEngineClient(model=model or "mock-default", api_key_source="none")
     if p == "openai":
-        return OpenAIEngineClient(model=model or "gpt-5.5", openai_cfg=openai_cfg, web_search_cfg=web_search_cfg)
+        return OpenAIEngineClient(
+            model=model or "gpt-5.5",
+            openai_cfg=openai_cfg,
+            web_search_cfg=web_search_cfg,
+            api_key=api_key,
+            api_key_source=api_key_source,
+        )
+    ws = web_search_cfg or {}
+    timeout = float(ws.get("timeout", 180))
     if p == "anthropic":
-        raise NotImplementedError(
-            f"Anthropic engine ('{model}') is not implemented yet. Disable it in "
-            "geo_config.yaml (enabled: false), or add an Anthropic client + ANTHROPIC_API_KEY."
-        )
+        return AnthropicEngineClient(model=model or "claude-sonnet-4-6", api_key=api_key,
+                                     api_key_source=api_key_source, timeout=timeout)
+    if p == "google":
+        return GoogleEngineClient(model=model or "gemini-3-pro", api_key=api_key,
+                                  api_key_source=api_key_source, timeout=timeout)
+    if p == "xai":
+        return XaiEngineClient(model=model or "grok-4", api_key=api_key,
+                               api_key_source=api_key_source, timeout=timeout)
+    if p == "deepseek":
+        return DeepSeekEngineClient(model=model or "deepseek-chat", api_key=api_key,
+                                    api_key_source=api_key_source, timeout=timeout)
     if p == "perplexity":
-        raise NotImplementedError(
-            f"Perplexity engine ('{model}') is not implemented yet. Disable it in "
-            "geo_config.yaml (enabled: false), or add a Perplexity client + PERPLEXITY_API_KEY."
-        )
+        return PerplexityEngineClient(model=model or "sonar", api_key=api_key,
+                                      api_key_source=api_key_source, timeout=timeout)
     raise ValueError(f"Unknown engine provider: {provider!r}")
 
 
@@ -699,13 +969,31 @@ def _engine_stats(results: list[GeoQueryResult]) -> dict[str, Any]:
     scores = [r.per_query_geo_score for r in measured if r.per_query_geo_score is not None]
     prominences = [r.prominence_score for r in measured if r.prominence_score is not None]
     mentions = sum(1 for r in measured if r.brand_mentioned)
+    web_grounded = bool(results) and all(r.web_grounded for r in results)
+    sources_count = sum(int(r.sources_count or 0) for r in results)
     return {
         "geo_score": round(sum(scores) / len(scores), 1) if scores else 0.0,
         "visibility_rate": round(mentions / len(measured), 4) if measured else 0.0,
         "queries_run": len(results),
         "brand_mentions": mentions,
         "avg_prominence": round(sum(prominences) / len(prominences), 4) if prominences else 0.0,
+        "web_grounded": web_grounded,
+        "sources_count": sources_count,
     }
+
+
+def overall_grounded_score(engine_scores: list[dict[str, Any]]) -> float:
+    """Headline GEO score = average of ENABLED, WEB-GROUNDED engines that ran.
+
+    Ungrounded engines (e.g. DeepSeek) and errored/empty engines are excluded so an
+    ungrounded model can't drag a live-visibility metric. Returns 0.0 if none qualify.
+    """
+    grounded = [
+        e["geo_score"]
+        for e in engine_scores
+        if e.get("error") is None and e.get("queries_run") and e.get("web_grounded")
+    ]
+    return round(sum(grounded) / len(grounded), 1) if grounded else 0.0
 
 
 def score_geo(report: GeoReport) -> float:
@@ -773,12 +1061,14 @@ def _run_engine(
                     error="empty completion — no answer returned after retry",
                     web_search_used=web_search_used, sources=sources,
                     provider=client.provider, model=client.model,
+                    api_key_source=client.api_key_source,
                 )
             else:
                 result = GeoQueryResult(
                     query=query, engine=client.provider, answer=answer, error=None,
                     web_search_used=web_search_used, sources=sources,
                     provider=client.provider, model=client.model,
+                    api_key_source=client.api_key_source,
                 )
         except Exception as exc:
             # Error/timeout — leave it unscored; never record a false zero for a query
@@ -787,7 +1077,12 @@ def _run_engine(
                 query=query, engine=client.provider, answer="", error=str(exc),
                 web_search_used=False, sources=[],
                 provider=client.provider, model=client.model,
+                api_key_source=client.api_key_source,
             )
+
+        # Grounding evidence: whether this engine browses, and how many live sources.
+        result.web_grounded = client.web_grounded
+        result.sources_count = len(result.sources or [])
 
         # detect_brand_mentions early-returns on error, so error rows keep the default
         # (unmeasured) state and are excluded from scoring/visibility.
@@ -836,6 +1131,9 @@ def run_geo(config: dict[str, Any], progress: Callable[[dict], None] | None = No
     brand_aliases = config.get("brand_aliases") or [brand]
     openai_cfg = config.get("openai", {})
     ws_cfg = config.get("web_search", {})
+    audit_settings = config.get("audit_settings") or {}
+    api_key_source = str(audit_settings.get("api_key_source") or "env")
+    temporary_api_key = str(config.get("_temporary_api_key") or "").strip() or None
 
     def _emit(event: dict) -> None:
         if progress is not None:
@@ -881,7 +1179,14 @@ def run_geo(config: dict[str, Any], progress: Callable[[dict], None] | None = No
         provider, model = engine["provider"], engine["model"]
         labels.append(f"{provider}/{model}")
         try:
-            client = create_engine_client(provider, model, openai_cfg=openai_cfg, web_search_cfg=ws_cfg)
+            client = create_engine_client(
+                provider,
+                model,
+                openai_cfg=openai_cfg,
+                web_search_cfg=ws_cfg,
+                api_key=temporary_api_key if api_key_source == "temporary" else None,
+                api_key_source=api_key_source if provider != "mock" else "none",
+            )
         except Exception as exc:
             # An enabled-but-unavailable engine (missing key / not implemented) is
             # surfaced, not silently dropped, and never crashes the other engines.
@@ -889,7 +1194,9 @@ def run_geo(config: dict[str, Any], progress: Callable[[dict], None] | None = No
             engine_scores.append({
                 "provider": provider, "model": model, "geo_score": 0.0,
                 "visibility_rate": 0.0, "queries_run": 0, "brand_mentions": 0,
-                "avg_prominence": 0.0, "error": str(exc),
+                "avg_prominence": 0.0, "api_key_source": api_key_source if provider != "mock" else "none",
+                "web_grounded": False, "sources_count": 0, "grounding_warning": None,
+                "error": str(exc),
             })
             _emit({"phase": "geo_engine_error", "provider": provider, "model": model, "error": str(exc)})
             continue
@@ -900,19 +1207,28 @@ def run_geo(config: dict[str, Any], progress: Callable[[dict], None] | None = No
         )
         index_offset += len(queries)
         all_results.extend(engine_results)
+        stats = _engine_stats(engine_results)
+        # Flag a search-capable engine that returned zero live sources across all
+        # queries — likely a grounding/config problem, not a clean run.
+        grounding_warning = None
+        if SUPPORTS_WEB_SEARCH.get(provider) and stats["queries_run"] and stats["sources_count"] == 0:
+            grounding_warning = "0 live sources returned — check grounding/config."
         engine_scores.append({
             "provider": provider, "model": model,
-            **_engine_stats(engine_results), "error": None,
+            **stats,
+            "api_key_source": client.api_key_source,
+            "grounding_warning": grounding_warning,
+            "error": None,
         })
 
     # Collapse case/punctuation variants to one display per brand BEFORE aggregating,
     # so the summary and Share of Voice count each brand once (across all engines).
     normalize_competitor_names(all_results)
 
-    # Overall = average of the engines that actually ran (don't penalise for an
-    # unimplemented/keyless engine that produced no score).
-    ran = [e["geo_score"] for e in engine_scores if e.get("error") is None and e.get("queries_run")]
-    overall = round(sum(ran) / len(ran), 1) if ran else 0.0
+    # Overall = average of ENABLED, WEB-GROUNDED engines only, so an ungrounded engine
+    # (e.g. DeepSeek) can't drag a live-visibility metric. Ungrounded engines still
+    # appear in the breakdown table, just excluded from this headline number.
+    overall = overall_grounded_score(engine_scores)
 
     report = GeoReport(
         brand=brand,

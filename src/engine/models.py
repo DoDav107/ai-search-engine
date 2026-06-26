@@ -50,10 +50,15 @@ class GeoQueryResult:
     web_search_used: bool = False
     # url_citation annotations returned by the measurement call: [{"url","title"}].
     sources: List[dict] = field(default_factory=list)
+    # Whether this engine ran with live web-search grounding active.
+    web_grounded: bool = False
+    # Number of live citations/source links returned for this query.
+    sources_count: int = 0
     # Which AI engine/model produced this answer (e.g. "openai" / "gpt-5.5").
     # Visibility differs across ChatGPT, Claude, Perplexity, etc.
     provider: str = ""
     model: str = ""
+    api_key_source: str = "none"
     # Prominence (0..1) of the brand's first mention in the answer; None if absent/error.
     prominence_score: float | None = None
 
@@ -115,6 +120,7 @@ class CombinedReport:
     seo_recommendations: List["AdvisoryRecommendation"] = field(default_factory=list)
     geo_recommendations: List["AdvisoryRecommendation"] = field(default_factory=list)
     geo_assessment: str = ""
+    audit_settings: dict = field(default_factory=dict)
 
 
 @dataclass

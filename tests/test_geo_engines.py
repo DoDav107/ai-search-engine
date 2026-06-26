@@ -8,7 +8,9 @@ API keys or network calls are needed. Runnable under pytest OR directly:
 
 from __future__ import annotations
 
-from src.agents.geo_agent import _resolve_engines, run_geo
+import os
+
+from src.agents.geo_agent import _resolve_engines, overall_grounded_score, run_geo
 
 _QUERIES = [
     "How can I automate repetitive tasks in my startup?",
@@ -27,7 +29,9 @@ def test_mock_engine_still_runs() -> None:
     report = run_geo(_base(engine="mock"))
     assert len(report.results) == len(_QUERIES)
     assert all(r.provider == "mock" and r.model == "mock-default" for r in report.results)
-    assert report.geo_score > 0  # "Eloize" appears in the canned answers
+    assert report.engine_scores[0]["geo_score"] > 0  # mock produced a per-engine score
+    # mock is ungrounded → excluded from the grounded headline average.
+    assert report.geo_score == overall_grounded_score(report.engine_scores)
 
 
 def test_legacy_single_engine_unchanged() -> None:
@@ -35,8 +39,8 @@ def test_legacy_single_engine_unchanged() -> None:
     report = run_geo(_base(engine="mock"))
     assert len(report.engine_scores) == 1
     assert report.engine_scores[0]["provider"] == "mock"
-    # Overall equals the single engine's score (average of one).
-    assert report.geo_score == report.engine_scores[0]["geo_score"]
+    # Overall is the grounded-only average (mock is ungrounded → headline excludes it).
+    assert report.geo_score == overall_grounded_score(report.engine_scores)
 
 
 def test_disabled_engines_are_skipped() -> None:
@@ -73,28 +77,31 @@ def test_per_engine_scores_and_overall_is_average() -> None:
     ])
     report = run_geo(cfg)
     ran = [e["geo_score"] for e in report.engine_scores if e.get("error") is None and e["queries_run"]]
-    assert ran, "expected at least one engine to produce a score"
-    expected = round(sum(ran) / len(ran), 1)
-    assert report.geo_score == expected
-    # Each engine entry carries the documented breakdown fields.
+    assert len(ran) == 2, "both enabled mock engines should produce a score"
+    # Overall is the grounded-only average (both mock engines ungrounded → 0.0).
+    assert report.geo_score == overall_grounded_score(report.engine_scores)
+    # Each engine entry carries the documented breakdown fields incl. grounding.
     for e in report.engine_scores:
         for key in ("provider", "model", "geo_score", "visibility_rate", "queries_run",
-                    "brand_mentions", "avg_prominence"):
+                    "brand_mentions", "avg_prominence", "web_grounded", "sources_count"):
             assert key in e
 
 
-def test_enabled_but_unimplemented_engine_errors_without_crashing() -> None:
+def test_enabled_engine_without_key_errors_without_crashing() -> None:
+    # All providers are implemented now; an enabled provider with NO API key must fail
+    # loudly (naming its env var) without crashing the rest of the run.
+    os.environ.pop("PERPLEXITY_API_KEY", None)
     cfg = _base(engines=[
         {"provider": "mock", "model": "mock-default", "enabled": True},
         {"provider": "perplexity", "model": "sonar", "enabled": True},
     ])
     report = run_geo(cfg)  # must not raise
     perplexity = next(e for e in report.engine_scores if e["provider"] == "perplexity")
-    assert perplexity["error"] and "not implemented" in perplexity["error"].lower()
-    # The mock engine still ran and the overall excludes the failed engine.
+    assert perplexity["error"] and "PERPLEXITY_API_KEY" in perplexity["error"]
+    # The mock engine still ran; overall excludes the failed (and ungrounded) engines.
     mock = next(e for e in report.engine_scores if e["provider"] == "mock")
     assert mock["queries_run"] == len(_QUERIES)
-    assert report.geo_score == mock["geo_score"]
+    assert report.geo_score == overall_grounded_score(report.engine_scores)
 
 
 def _main() -> int:

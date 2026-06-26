@@ -963,8 +963,19 @@ def _trend_line(title: str, series: list[tuple], ylabel: str = "Score (%)") -> g
     return fig
 
 
+def _add_noise_bands(fig: go.Figure, xs: list, low_conf: list[bool]) -> None:
+    """Shade each interval whose run is same-day/low-confidence (matches the Next.js band)."""
+    for i in range(1, len(xs)):
+        if low_conf[i]:
+            fig.add_vrect(
+                x0=xs[i - 1], x1=xs[i], fillcolor=AMBER, opacity=0.10,
+                line_width=0, layer="below",
+            )
+
+
 def _render_trends(default_brand: str) -> None:
     from src.reporting import history as _hist
+    from src.reporting.trends import low_confidence_flags, min_interval_hours
 
     st.markdown("## 📈 Trends over time")
     clients = _hist.list_clients()
@@ -998,15 +1009,27 @@ def _render_trends(default_brand: str) -> None:
 
     xs = [ts for ts, _ in runs]
     prev_p, last_p = runs[-2][1], runs[-1][1]
+    # Noise guard: flag runs whose gap to the previous run is below the threshold (same-day
+    # variance reads as a confident trend otherwise). Shared with the Next.js view.
+    _threshold = min_interval_hours()
+    low_conf = low_confidence_flags(xs, _threshold)
+    _last_same_day = low_conf[-1]
 
     def _num(payload: dict, key: str) -> float | None:
         v = payload.get(key)
         return float(v) if isinstance(v, (int, float)) else None
 
-    st.caption(
-        f"Change since previous run · {runs[-2][0].strftime('%d %b %Y %H:%M UTC')} "
-        f"→ {runs[-1][0].strftime('%d %b %Y %H:%M UTC')}"
-    )
+    if _last_same_day:
+        st.caption(
+            f"Change vs earlier today · {runs[-2][0].strftime('%d %b %Y %H:%M UTC')} "
+            f"→ {runs[-1][0].strftime('%d %b %Y %H:%M UTC')} — "
+            f"⚠️ runs < {_threshold:.0f}h apart; this may reflect run-to-run variance, not a daily trend."
+        )
+    else:
+        st.caption(
+            f"Change since previous run · {runs[-2][0].strftime('%d %b %Y %H:%M UTC')} "
+            f"→ {runs[-1][0].strftime('%d %b %Y %H:%M UTC')}"
+        )
     metrics = [
         ("Unified", _num(last_p, "unified_score"), _num(prev_p, "unified_score")),
         ("SEO", _num(last_p, "seo_score"), _num(prev_p, "seo_score")),
@@ -1020,7 +1043,8 @@ def _render_trends(default_brand: str) -> None:
             delta = round(cur - prv, 1)
             arrow = "▲" if delta > 0 else ("▼" if delta < 0 else "▬")
             dcol = GREEN if delta > 0 else (RED if delta < 0 else "var(--muted)")
-            delta_html = f"<span style='color:{dcol};font-weight:700'>{arrow} {abs(delta):.1f}</span> vs prev"
+            _vs = "vs earlier today" if _last_same_day else "vs prev"
+            delta_html = f"<span style='color:{dcol};font-weight:700'>{arrow} {abs(delta):.1f}</span> {_vs}"
         else:
             delta_html = "<span style='color:var(--muted)'>— no prior</span>"
         cards.append(
@@ -1030,15 +1054,19 @@ def _render_trends(default_brand: str) -> None:
     st.markdown(f"<div class='metric-grid'>{''.join(cards)}</div>", unsafe_allow_html=True)
 
     # Score + visibility trends
-    st.plotly_chart(
-        _trend_line("Scores & visibility over time", [
-            ("Unified", ACCENT, xs, [_num(p, "unified_score") for _, p in runs]),
-            ("SEO", "#38bdf8", xs, [_num(p, "seo_score") for _, p in runs]),
-            ("GEO", GREEN, xs, [_num(p, "geo_score") for _, p in runs]),
-            ("Brand visibility", AMBER, xs, [_visibility_from_payload(p) for _, p in runs]),
-        ]),
-        width="stretch", config={"displayModeBar": False},
-    )
+    _scores_fig = _trend_line("Scores & visibility over time", [
+        ("Unified", ACCENT, xs, [_num(p, "unified_score") for _, p in runs]),
+        ("SEO", "#38bdf8", xs, [_num(p, "seo_score") for _, p in runs]),
+        ("GEO", GREEN, xs, [_num(p, "geo_score") for _, p in runs]),
+        ("Brand visibility", AMBER, xs, [_visibility_from_payload(p) for _, p in runs]),
+    ])
+    _add_noise_bands(_scores_fig, xs, low_conf)
+    st.plotly_chart(_scores_fig, width="stretch", config={"displayModeBar": False})
+    if any(low_conf):
+        st.caption(
+            f"⚠️ Shaded bands mark runs < {_threshold:.0f}h apart (same-day) — treat those "
+            "segments as low-confidence (run-to-run variance), not a real trend."
+        )
 
     # Share-of-Voice trend: subject + top 3 competitors (ranked by the latest run)
     if any(_subject_sov(p) is not None for _, p in runs):
@@ -1053,10 +1081,9 @@ def _render_trends(default_brand: str) -> None:
         palette = ["#38bdf8", AMBER, RED]
         for i, comp in enumerate(top_comps):
             series.append((comp, palette[i % len(palette)], xs, [m.get(comp) for m in sov_maps]))
-        st.plotly_chart(
-            _trend_line("Share of Voice over time (you vs top competitors)", series, ylabel="Share of Voice (%)"),
-            width="stretch", config={"displayModeBar": False},
-        )
+        _sov_fig = _trend_line("Share of Voice over time (you vs top competitors)", series, ylabel="Share of Voice (%)")
+        _add_noise_bands(_sov_fig, xs, low_conf)
+        st.plotly_chart(_sov_fig, width="stretch", config={"displayModeBar": False})
     else:
         st.caption("Share-of-Voice trend unavailable — this client's history predates SoV capture.")
 
@@ -1089,8 +1116,12 @@ def _render_trends(default_brand: str) -> None:
                 yaxis={"range": [0, 100], "gridcolor": "rgba(255,255,255,0.08)", "title": "Prominence (%)"},
                 xaxis={"gridcolor": "rgba(255,255,255,0.06)"},
             )
+            _add_noise_bands(figq, xs, low_conf)
             st.plotly_chart(figq, width="stretch", config={"displayModeBar": False})
-            st.caption("Green marker = brand mentioned that run; red = absent. Gaps mean the query wasn't in that run.")
+            st.caption(
+                "Green marker = brand mentioned that run; red = absent. Gaps mean the query "
+                "wasn't in that run. Shaded bands = same-day / low-confidence runs."
+            )
 
 
 _render_trends(brand)

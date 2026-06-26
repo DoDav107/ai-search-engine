@@ -7,6 +7,7 @@ import { ScoreCard } from "./score-card";
 import { SeoSection } from "./seo-section";
 import { GeoSection } from "./geo-section";
 import { RecommendationsSection } from "./recommendations-section";
+import { TrendsSection } from "./trends-section";
 import { ExportButton } from "./export-button";
 import { NewAudit } from "./new-audit";
 import type { Report } from "@/lib/report";
@@ -158,6 +159,7 @@ export function Dashboard() {
           <SeoSection report={report} />
           <GeoSection report={report} />
           <RecommendationsSection report={report} />
+          <TrendsSection defaultClient={report.client ?? report.brand} />
         </>
       )}
     </main>

@@ -149,6 +149,31 @@ export type Report = {
   error?: string;
 };
 
+// ----- Trends over time (served by /api/trends → src.reporting.trends) -----
+export type TrendRun = {
+  timestamp: string; // ISO 8601
+  unified: number | null;
+  seo: number | null;
+  geo: number | null;
+  brand_visibility: number | null;
+  subject_sov: number | null;
+  // True when this run's gap to the PREVIOUS run is below the noise-guard threshold.
+  low_confidence: boolean;
+};
+export type TrendSovSeries = { name: string; is_subject: boolean; values: (number | null)[] };
+export type TrendQueryPoint = { prominence: number | null; mentioned: boolean };
+export type TrendsSeries = {
+  client: string;
+  subject_name: string;
+  min_interval_hours: number;
+  enough_data: boolean;
+  runs: TrendRun[];
+  sov: TrendSovSeries[];
+  queries: string[];
+  query_series: Record<string, TrendQueryPoint[]>;
+};
+export type TrendsClients = { clients: string[]; min_interval_hours: number };
+
 // Shared glassmorphism card surface (matches 2A score cards).
 // Surface and border lifted slightly so cards separate clearly from the dark base.
 export const GLASS =

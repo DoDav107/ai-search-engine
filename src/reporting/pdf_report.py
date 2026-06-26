@@ -47,6 +47,11 @@ _FACTOR_LABEL = {
     "image_alt": "Image alt text",
     "word_count": "Word count",
     "structured_data": "Structured data",
+    "crawl_access": "Crawl access",
+    "audit_coverage": "Audit coverage",
+    "https_enabled": "HTTPS",
+    "domain_brand_signal": "Brand/domain signal",
+    "canonical_url_shape": "Canonical URL shape",
 }
 
 
@@ -144,10 +149,139 @@ def _rec_card(rec: dict) -> str:
     </div>"""
 
 
+def _svg_trend_chart(
+    labels: list[str],
+    series: list[tuple[str, str, list[float | None]]],
+    low_conf: list[bool],
+    width: int = 760,
+    height: int = 300,
+) -> str:
+    """Inline SVG line chart (Chromium renders it crisply — no charting lib/raster step).
+
+    Mirrors the dashboards: 0–100 axis, gridlines, per-metric polylines + markers, and
+    shaded same-day/low-confidence noise bands. Gaps (None) break the line (connectgaps).
+    """
+    left, right, top, bottom = 44, 16, 16, 36
+    pw, ph = width - left - right, height - top - bottom
+    n = len(labels)
+
+    def px(i: int) -> float:
+        return left + (pw * i / (n - 1) if n > 1 else pw / 2)
+
+    def py(v: float) -> float:
+        return top + (1 - max(0.0, min(v, 100.0)) / 100.0) * ph
+
+    parts: list[str] = [f'<svg viewBox="0 0 {width} {height}" width="100%" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">']
+    # Gridlines + y labels.
+    for gv in (0, 25, 50, 75, 100):
+        gy = py(gv)
+        parts.append(f'<line x1="{left}" y1="{gy:.1f}" x2="{width - right}" y2="{gy:.1f}" stroke="#ececf4" stroke-width="1"/>')
+        parts.append(f'<text x="{left - 6}" y="{gy + 3:.1f}" text-anchor="end" font-size="9" fill="#5b6478">{gv}</text>')
+    # Noise bands over same-day / low-confidence intervals.
+    for i in range(1, n):
+        if low_conf[i]:
+            x0, x1 = px(i - 1), px(i)
+            parts.append(f'<rect x="{x0:.1f}" y="{top}" width="{x1 - x0:.1f}" height="{ph}" fill="{AMBER}" opacity="0.12"/>')
+    # X labels (thinned so they don't overlap).
+    step = max(1, -(-n // 8))  # ceil(n/8)
+    for i, lab in enumerate(labels):
+        if i % step == 0 or i == n - 1:
+            parts.append(f'<text x="{px(i):.1f}" y="{height - 14}" text-anchor="middle" font-size="8" fill="#5b6478">{_e(lab)}</text>')
+    # Series polylines + markers (skip None so gaps break cleanly).
+    for _name, color, values in series:
+        pts = [(px(i), py(v)) for i, v in enumerate(values) if isinstance(v, (int, float))]
+        if len(pts) >= 2:
+            d = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
+            parts.append(f'<polyline points="{d}" fill="none" stroke="{color}" stroke-width="2.5" stroke-linejoin="round"/>')
+        for x, y in pts:
+            parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3" fill="{color}"/>')
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def _trend_card(label: str, cur: Any, prev: Any, last_low: bool) -> str:
+    cur_txt = f"{cur:.1f}%" if isinstance(cur, (int, float)) else "—"
+    if isinstance(cur, (int, float)) and isinstance(prev, (int, float)):
+        delta = round(cur - prev, 1)
+        arrow = "▲" if delta > 0 else ("▼" if delta < 0 else "▬")
+        color = GREEN if delta > 0 else (RED if delta < 0 else MUTED)
+        vs = "vs earlier today" if last_low else "vs prev"
+        foot = f'<span style="color:{color};font-weight:700">{arrow} {abs(delta):.1f}</span> {vs}'
+    else:
+        foot = '<span class="muted">— no prior</span>'
+    return (
+        f'<div class="tcard"><div class="tlabel">{_e(label)}</div>'
+        f'<div class="tval">{cur_txt}</div><div class="tfoot">{foot}</div></div>'
+    )
+
+
+def _trend_section(trends: dict | None) -> str:
+    """Trends-over-time PDF section. Returns "" when there aren't ≥2 runs (omits cleanly)."""
+    if not trends or not trends.get("enough_data"):
+        return ""
+    runs = trends.get("runs") or []
+    if len(runs) < 2:
+        return ""
+    last, prev = runs[-1], runs[-2]
+    last_low = bool(last.get("low_confidence"))
+
+    def _lab(iso: str) -> str:
+        try:
+            d = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+            return d.strftime("%d/%m %H:%M")
+        except (ValueError, TypeError):
+            return str(iso)
+
+    labels = [_lab(r.get("timestamp", "")) for r in runs]
+    low = [bool(r.get("low_confidence")) for r in runs]
+    series = [
+        ("Unified", ACCENT, [r.get("unified") for r in runs]),
+        ("SEO", "#2563eb", [r.get("seo") for r in runs]),
+        ("GEO", GREEN, [r.get("geo") for r in runs]),
+        ("Brand visibility", AMBER, [r.get("brand_visibility") for r in runs]),
+    ]
+    chart = _svg_trend_chart(labels, series, low)
+    cards = "".join(
+        _trend_card(name, last.get(key), prev.get(key), last_low)
+        for name, key in (("Unified", "unified"), ("SEO", "seo"), ("GEO", "geo"),
+                          ("Brand visibility", "brand_visibility"))
+    )
+    legend = "".join(
+        f'<span class="tlg"><span class="tdot" style="background:{color}"></span>{_e(name)}</span>'
+        for name, color, _ in series
+    )
+    threshold = trends.get("min_interval_hours") or 24
+    period = f'{_lab(prev.get("timestamp", ""))} → {_lab(last.get("timestamp", ""))}'
+    if last_low:
+        change_note = (
+            f'<div class="noise-note">⚠️ Latest two runs are &lt; {threshold:.0f}h apart (same-day). '
+            'Deltas below may reflect run-to-run variance, not a real trend.</div>'
+        )
+    else:
+        change_note = ""
+    band_note = (
+        f'<div class="muted small">Shaded bands mark runs &lt; {threshold:.0f}h apart (same-day) — '
+        'treat those segments as low-confidence, not a trend.</div>'
+        if any(low) else ""
+    )
+    return f"""
+    <section class="page">
+        <h2>Trends Over Time</h2>
+        <div class="muted small">Change since previous run · {_e(period)} · {len(runs)} runs</div>
+        {change_note}
+        <div class="trend-cards">{cards}</div>
+        <h3>Scores &amp; visibility over time</h3>
+        <div class="chart">{chart}</div>
+        <div class="trend-legend">{legend}</div>
+        {band_note}
+    </section>"""
+
+
 # ---------------------------------------------------------------------------
 # Full HTML document
 # ---------------------------------------------------------------------------
-def render_html(report: dict, generated: str, logo_data_uri: str | None = None) -> str:
+def render_html(report: dict, generated: str, logo_data_uri: str | None = None,
+                trends: dict | None = None) -> str:
     brand = (report.get("brand") or report.get("site_name") or "").strip() or "Audit"
     unified = float(report.get("unified_score") or 0.0)
     seo_score = float(report.get("seo_score") or 0.0)
@@ -244,8 +378,12 @@ def render_html(report: dict, generated: str, logo_data_uri: str | None = None) 
         hit = bool(r.get("brand_mentioned"))
         hit_html = f'<span style="color:{GREEN}">Yes</span>' if hit else f'<span style="color:{MUTED}">No</span>'
         browsed = "✓" if r.get("web_search_used") else "—"
+        # Locale grounding applied to this query's search (missing → Global; backward compat).
+        loc = str(r.get("locale_applied") or "global")
+        loc_txt = "Global" if loc == "global" else _e(loc)
         return f"""<tr>
             <td>{_e(r.get('query', ''))}</td>
+            <td class="ctr">{loc_txt}</td>
             <td class="ctr">{hit_html}</td>
             <td class="num">{prom_txt}</td>
             <td class="ctr">{browsed}</td>
@@ -327,8 +465,8 @@ def render_html(report: dict, generated: str, logo_data_uri: str | None = None) 
         {sov_html}
         <h3>Per-query results</h3>
         <table>
-            <thead><tr><th>Query</th><th class="ctr">Mentioned</th><th class="num">Prominence</th><th class="ctr">Browsed</th></tr></thead>
-            <tbody>{geo_rows or '<tr><td colspan="4" class="muted">No measured queries.</td></tr>'}</tbody>
+            <thead><tr><th>Query</th><th class="ctr">Region</th><th class="ctr">Mentioned</th><th class="num">Prominence</th><th class="ctr">Browsed</th></tr></thead>
+            <tbody>{geo_rows or '<tr><td colspan="5" class="muted">No measured queries.</td></tr>'}</tbody>
         </table>
         {errored_note}
         {comp_html}
@@ -370,6 +508,9 @@ def render_html(report: dict, generated: str, logo_data_uri: str | None = None) 
         {geo_recs_html}
     </section>"""
 
+    # ---- Trends over time (only when ≥2 historical runs exist; omitted cleanly else) ----
+    trends_section = _trend_section(trends)
+
     return f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><style>
 {_CSS}
@@ -377,6 +518,7 @@ def render_html(report: dict, generated: str, logo_data_uri: str | None = None) 
 <body>
 {cover}
 {top_section}
+{trends_section}
 {seo_section}
 {geo_section}
 {recs_section}
@@ -473,6 +615,18 @@ table.top td { vertical-align: middle; }
     white-space: pre-wrap; word-break: break-word;
 }
 
+/* Trends over time */
+.trend-cards { display: flex; gap: 12px; margin: 10px 0 4px; }
+.tcard { flex: 1; border: 1px solid #e7e8f0; border-radius: 12px; padding: 12px 14px; background: #fafaff; }
+.tlabel { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7494; }
+.tval { font-size: 23px; font-weight: 800; color: #16182a; margin-top: 2px; }
+.tfoot { font-size: 10px; color: #5b6478; margin-top: 3px; }
+.chart { border: 1px solid #e7e8f0; border-radius: 12px; padding: 12px; background: #fff; margin-top: 4px; }
+.trend-legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 8px; }
+.tlg { display: flex; align-items: center; gap: 6px; font-size: 10px; color: #5b6478; }
+.tdot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.noise-note { border-left: 4px solid #d97706; background: #fff7ed; padding: 8px 12px; border-radius: 0 8px 8px 0; margin: 8px 0; font-size: 10.5px; color: #7c4a09; }
+
 /* Sources */
 .sources { list-style: none; padding: 0; margin: 4px 0 0; columns: 2; column-gap: 22px; }
 .sources li { margin-bottom: 6px; break-inside: avoid; font-size: 10px; }
@@ -530,7 +684,19 @@ def build_pdf(
 
     if logo_path is None:
         logo_path = _load_logo_from_config()
-    html = render_html(report, _generated_caption(report_path), _logo_data_uri(logo_path))
+
+    # Trends-over-time from the SAME saved report history the dashboards read (reused via
+    # src.reporting.trends — no rescoring, no API). None/insufficient history → section omitted.
+    trends = None
+    client = (report.get("client") or report.get("brand") or "").strip()
+    if client:
+        try:
+            from src.reporting.trends import series_for_client
+            trends = series_for_client(client)
+        except Exception:  # history is a nice-to-have — never block the PDF
+            trends = None
+
+    html = render_html(report, _generated_caption(report_path), _logo_data_uri(logo_path), trends=trends)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     from playwright.sync_api import sync_playwright

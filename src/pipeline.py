@@ -134,6 +134,7 @@ def build_audit_configs(
     client: str | None = None,
     geo_provider: str | None = None,
     geo_model: str | None = None,
+    geo_locale: str | None = None,
     api_key_source: str = "env",
     crawl_config_path: str = "config/crawl_config.yaml",
     geo_config_path: str = "config/geo_config.yaml",
@@ -162,8 +163,18 @@ def build_audit_configs(
 
     geo_config = load_geo_config(geo_config_path)
     selected_provider, selected_model = _select_geo_engine(geo_config, geo_provider, geo_model)
+    # Audit-level default locale from the form ("global"/None → no region grounding).
+    from src.agents.geo_agent import _normalize_locale
+
+    locale = _normalize_locale(geo_locale)
+    geo_block = {**(geo_config.get("geo") or {})}
+    if locale:
+        geo_block["locale"] = locale
+    else:
+        geo_block.pop("locale", None)
     geo_config = {
         **geo_config,
+        "geo": geo_block,
         "client": (client or brand).strip() or brand,
         "brand": brand,
         "queries": list(queries),
@@ -175,6 +186,7 @@ def build_audit_configs(
             "domain": base_url,
             "geo_provider": selected_provider,
             "geo_model": selected_model,
+            "geo_locale": locale["country"] if locale else "global",
             "api_key_source": api_key_source if api_key_source in {"env", "temporary", "none"} else "env",
             "queries_count": len(queries),
         },

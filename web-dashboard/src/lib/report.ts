@@ -43,6 +43,10 @@ export type GeoResult = {
   per_query_geo_score?: number | null;
   web_grounded?: boolean;
   sources_count?: number;
+  // Locale grounding applied to this query's search (optional — absent on older reports).
+  // locale_applied: ISO country code (e.g. "AU") or "global"; locale_method: how it was applied.
+  locale_applied?: string;
+  locale_method?: "native_param" | "query_suffix" | "none" | string;
 };
 
 // Per engine/model GEO breakdown. Visibility differs across ChatGPT, Claude, etc.

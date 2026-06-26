@@ -440,6 +440,21 @@ inject_css()
 # ---------------------------------------------------------------------------
 MAX_QUERIES = 10
 
+# Audit-level default region for locale-grounded web search. "global" = no grounding.
+# Codes are ISO-3166 alpha-2; per-query overrides still come from config. Shared label
+# wording with the Next.js form so both surfaces read identically.
+LOCALE_OPTIONS: list[tuple[str, str]] = [
+    ("global", "🌍 Global / no region"),
+    ("AU", "🇦🇺 Australia"),
+    ("US", "🇺🇸 United States"),
+    ("GB", "🇬🇧 United Kingdom"),
+    ("NZ", "🇳🇿 New Zealand"),
+    ("CA", "🇨🇦 Canada"),
+    ("IE", "🇮🇪 Ireland"),
+    ("IN", "🇮🇳 India"),
+    ("SG", "🇸🇬 Singapore"),
+]
+
 
 def _geo_options() -> dict[str, Any]:
     try:
@@ -559,6 +574,18 @@ with st.sidebar:
             format_func=lambda mid: _model_labels.get(mid, mid),
             key=f"na_geo_model_{na_provider}",
         )
+        # Audit-level default region (per-query overrides come from config).
+        _locale_codes = [code for code, _ in LOCALE_OPTIONS]
+        _locale_labels = {code: label for code, label in LOCALE_OPTIONS}
+        na_locale = st.selectbox(
+            "Default region",
+            _locale_codes,
+            index=0,
+            format_func=lambda code: _locale_labels.get(code, code),
+            key="na_geo_locale",
+            help="Grounds the web search in a region so the competitive set is region-correct. "
+            "Global applies no region. Individual queries can override this in config.",
+        )
         na_api_key_mode = "env"
         na_temporary_key = ""
         if na_provider != "mock":
@@ -609,6 +636,7 @@ with st.sidebar:
                     "queries": _qs,
                     "geo_provider": na_provider,
                     "geo_model": na_model,
+                    "geo_locale": na_locale,
                     "api_key_mode": na_api_key_mode,
                     "temporary_api_key": na_temporary_key.strip() if na_api_key_mode == "temporary" else "",
                 }
@@ -665,6 +693,7 @@ if _pending:
             queries=_pending["queries"],
             geo_provider=_pending.get("geo_provider"),
             geo_model=_pending.get("geo_model"),
+            geo_locale=_pending.get("geo_locale"),
             api_key_source="temporary" if _pending.get("api_key_mode") == "temporary" else "env",
         )
         if _pending.get("api_key_mode") == "temporary" and _pending.get("temporary_api_key"):
@@ -1479,12 +1508,20 @@ if geo_results:
         prom_txt = f" · prominence {prom:.1f}%" if prom is not None else ""
         pm = "/".join(p for p in [r.get("provider"), r.get("model")] if p)
         pm_label = f"  ·  `{pm}`" if pm else ""
-        with st.expander(f"{icon}  {q}{prom_txt}{pm_label}"):
+        # Region badge: which locale grounded this query's search (missing → Global).
+        _loc = str(r.get("locale_applied") or "global")
+        loc_badge = "🌍 Global" if _loc == "global" else f"🌍 {_loc}"
+        with st.expander(f"{icon}  {q} · {loc_badge}{prom_txt}{pm_label}"):
             mc = r.get("mention_count")
             fp = r.get("first_position")
             meta_bits = []
             if pm:
                 meta_bits.append(f"Engine: **{pm}**")
+            _method = str(r.get("locale_method") or "none")
+            meta_bits.append(
+                f"Region: **{'Global' if _loc == 'global' else _loc}**"
+                + (f" ({_method})" if _method != "none" else "")
+            )
             meta_bits.append(f"Brand mentioned: **{'yes' if hit else 'no'}**")
             if mc is not None:
                 meta_bits.append(f"Mentions: **{mc}**")

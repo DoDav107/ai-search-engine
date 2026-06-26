@@ -6,6 +6,21 @@ import { AlertCircle, CheckCircle2, Loader2, Play, Plus, Rocket, X } from "lucid
 const MAX_QUERIES = 10;
 const POLL_MS = 2000;
 
+// Audit-level default region for locale-grounded web search ("global" = no grounding).
+// Codes are ISO-3166 alpha-2; per-query overrides come from config. Mirrors the Streamlit
+// LOCALE_OPTIONS so both forms read identically.
+const LOCALE_OPTIONS: { code: string; label: string }[] = [
+  { code: "global", label: "🌍 Global / no region" },
+  { code: "AU", label: "🇦🇺 Australia" },
+  { code: "US", label: "🇺🇸 United States" },
+  { code: "GB", label: "🇬🇧 United Kingdom" },
+  { code: "NZ", label: "🇳🇿 New Zealand" },
+  { code: "CA", label: "🇨🇦 Canada" },
+  { code: "IE", label: "🇮🇪 Ireland" },
+  { code: "IN", label: "🇮🇳 India" },
+  { code: "SG", label: "🇸🇬 Singapore" },
+];
+
 type ProgressEvent = { phase: string; [key: string]: unknown };
 type Status = "idle" | "running" | "done" | "error";
 type JobStatus = {
@@ -105,6 +120,7 @@ export function NewAudit({ onComplete }: { onComplete: () => void }) {
   const [geoOptions, setGeoOptions] = useState<GeoOptions | null>(null);
   const [geoProvider, setGeoProvider] = useState("openai");
   const [geoModel, setGeoModel] = useState("gpt-5.5");
+  const [geoLocale, setGeoLocale] = useState("global");
   const [apiKeyMode, setApiKeyMode] = useState<"env" | "temporary">("env");
   const [temporaryApiKey, setTemporaryApiKey] = useState("");
   const [confirm, setConfirm] = useState(false);
@@ -196,6 +212,7 @@ export function NewAudit({ onComplete }: { onComplete: () => void }) {
           queries,
           geo_provider: geoProvider,
           geo_model: geoModel,
+          geo_locale: geoLocale,
           api_key_mode: geoProvider === "mock" ? "env" : apiKeyMode,
           temporary_api_key: apiKeyMode === "temporary" ? temporaryApiKey : undefined,
         }),
@@ -375,6 +392,22 @@ export function NewAudit({ onComplete }: { onComplete: () => void }) {
                   <option key={model.id} value={model.id}>{model.label}</option>
                 ))}
               </select>
+            </label>
+            <label className="text-sm sm:col-span-2">
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">Default region</span>
+              <select
+                value={geoLocale}
+                onChange={(e) => setGeoLocale(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-[#111827] px-3 py-2 text-sm outline-none focus:border-primary/60"
+              >
+                {LOCALE_OPTIONS.map((opt) => (
+                  <option key={opt.code} value={opt.code}>{opt.label}</option>
+                ))}
+              </select>
+              <span className="mt-1 block text-[11px] text-muted-foreground">
+                Grounds the web search in a region so the competitive set is region-correct. Individual
+                queries can override this in config.
+              </span>
             </label>
           </div>
 

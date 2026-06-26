@@ -32,6 +32,8 @@ export type AuditInput = {
   queries: string[];
   geo_provider?: string;
   geo_model?: string;
+  // Audit-level default region (ISO code or "global"); flows to geo.locale in the config.
+  geo_locale?: string;
   api_key_mode?: "env" | "temporary";
   temporary_api_key?: string;
 };

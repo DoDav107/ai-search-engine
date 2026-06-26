@@ -18,6 +18,14 @@ competitors: []
 geo:
   default_provider: "openai"
   default_model: "gpt-5.5"
+  # Optional audit-level DEFAULT locale that grounds the web search in a region so the
+  # competitive set is region-correct (e.g. an AU client shouldn't be measured against US
+  # chains). Omit entirely for no default (global). `country` is an ISO-3166 alpha-2 code;
+  # `region` is the human name used for the query-suffix fallback (auto-filled if omitted).
+  # Per-query overrides below take precedence; "global" means explicitly no grounding.
+  # locale:
+  #   country: "AU"
+  #   region: "Australia"
 
 # AI engines/models to measure GEO visibility against. Brand visibility differs across
 # ChatGPT, Claude, Gemini, Grok, Perplexity, etc., so each ENABLED engine is run
@@ -53,6 +61,11 @@ engines:
   - { provider: "perplexity", model: "sonar",              enabled: false }
   - { provider: "perplexity", model: "sonar-pro",          enabled: false }
 
+# Queries may be a plain string (inherits geo.locale above) OR an object with a per-query
+# locale override: { text: "...", locale: "AU" }. Use locale: "global" to force NO region
+# grounding for a legitimately global query. Resolution: per-query > geo.locale > global.
+#   - { text: "best takeaway chicken near me", locale: "AU" }      # region-specific
+#   - { text: "most popular sneakers right now?", locale: "global" }  # explicitly global
 queries:
   - "What are the best running shoe brands?"
   - "Best athletic wear companies?"

@@ -322,6 +322,20 @@ function QualitySignals({ engines, measured }: { engines: EngineScore[]; measure
   );
 }
 
+// Region badge: which locale grounded this query's search. Missing/global → "Global".
+function LocaleBadge({ r }: { r: GeoResult }) {
+  const code = (r.locale_applied || "global").toString();
+  const label = code === "global" ? "Global" : code;
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
+      title={`Region: ${label}${r.locale_method && r.locale_method !== "none" ? ` (${r.locale_method})` : ""}`}
+    >
+      🌍 {label}
+    </span>
+  );
+}
+
 function QueryRow({ r }: { r: GeoResult }) {
   const [open, setOpen] = useState(false);
   const noAnswer = isNoAnswer(r);
@@ -337,7 +351,10 @@ function QueryRow({ r }: { r: GeoResult }) {
         className="grid w-full cursor-pointer grid-cols-[1fr_auto] items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-white/[0.06] sm:grid-cols-[minmax(0,2fr)_140px_minmax(0,1.3fr)_auto]"
       >
         <span className="min-w-0 truncate text-sm text-foreground/90" title={r.query}>
-          {r.query}
+          <span className="flex items-center gap-1.5">
+            <span className="truncate">{r.query}</span>
+            <LocaleBadge r={r} />
+          </span>
           {r.model ? (
             <span className="block truncate font-mono text-[10px] text-muted-foreground">
               {[r.provider, r.model].filter(Boolean).join(" / ")}
@@ -381,6 +398,13 @@ function QueryRow({ r }: { r: GeoResult }) {
                   </span>
                 </div>
               )}
+              <div className="flex items-center gap-2 text-xs">
+                <span className="uppercase tracking-wide text-muted-foreground">Region:</span>
+                <LocaleBadge r={r} />
+                {r.locale_method && r.locale_method !== "none" && (
+                  <span className="text-muted-foreground">via {r.locale_method.replace("_", " ")}</span>
+                )}
+              </div>
               {(r.per_query_geo_score != null || (r.sentiment_label && r.sentiment_label !== "unknown")) && (
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                   <span>Sentiment: <span className="text-foreground/90">{r.sentiment_label ?? "unknown"}</span></span>

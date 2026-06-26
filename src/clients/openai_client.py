@@ -126,6 +126,7 @@ class OpenAIClient:
         max_output_tokens: int | None = None,
         model: str | None = None,
         timeout: float | None = None,
+        user_location: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         """Run a GEO measurement via the Responses API with the web_search tool enabled.
 
@@ -134,6 +135,9 @@ class OpenAIClient:
         ``responses.create`` so the model can browse and return url_citation annotations.
         The answer is read from ``output_text`` (the output is a typed array — message vs
         reasoning vs tool-call items — never assume a fixed position).
+
+        ``user_location`` (``{country, region}``) grounds the search in a locale via the
+        web_search tool's native ``user_location`` (type ``approximate``); omitted → global.
 
         Raises RuntimeError on cap/auth/rate/API errors (callers treat that as an
         unmeasured query, not a genuine zero). The shared per-run call cap applies.
@@ -144,10 +148,17 @@ class OpenAIClient:
                 "Increase openai.max_calls_per_run in geo_config.yaml to allow more."
             )
 
+        web_search_tool: dict[str, Any] = {"type": "web_search"}
+        if user_location and user_location.get("country"):
+            loc: dict[str, str] = {"type": "approximate", "country": user_location["country"]}
+            if user_location.get("region"):
+                loc["region"] = user_location["region"]
+            web_search_tool["user_location"] = loc
+
         kwargs: dict[str, Any] = {
             "model": model or _MODEL,
             "input": prompt,
-            "tools": [{"type": "web_search"}],
+            "tools": [web_search_tool],
         }
         if reasoning_effort:
             kwargs["reasoning"] = {"effort": reasoning_effort}

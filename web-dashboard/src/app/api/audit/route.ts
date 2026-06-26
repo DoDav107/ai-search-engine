@@ -23,6 +23,12 @@ function validate(body: unknown): Validation {
   const brand = String(source.brand ?? "").trim();
   const domain = normalizeUrl(String(source.domain ?? source.url ?? ""));
   const queries = readQueries(source.queries);
+  const geoProvider = String(source.geo_provider ?? "").trim().toLowerCase();
+  const geoModel = String(source.geo_model ?? "").trim();
+  const geoLocale = String(source.geo_locale ?? "global").trim() || "global";
+  const apiKeyModeRaw = String(source.api_key_mode ?? "env").trim().toLowerCase();
+  const apiKeyMode = apiKeyModeRaw === "temporary" ? "temporary" : "env";
+  const temporaryApiKey = String(source.temporary_api_key ?? "").trim();
   const errors: string[] = [];
 
   if (!client) errors.push("Client is required.");
@@ -39,9 +45,30 @@ function validate(body: unknown): Validation {
   if (queries.length > MAX_QUERIES) {
     errors.push(`Too many queries (${queries.length}). The cap is ${MAX_QUERIES}.`);
   }
+  if (!geoProvider) errors.push("AI provider is required.");
+  if (!geoModel) errors.push("AI model is required.");
+  if (apiKeyModeRaw !== "env" && apiKeyModeRaw !== "temporary") {
+    errors.push("API key mode must be env or temporary.");
+  }
+  if (apiKeyMode === "temporary" && geoProvider !== "mock" && !temporaryApiKey) {
+    errors.push("Temporary API key is required for this key mode.");
+  }
 
   if (errors.length) return { ok: false, errors };
-  return { ok: true, data: { client, brand, domain, queries } };
+  return {
+    ok: true,
+    data: {
+      client,
+      brand,
+      domain,
+      queries,
+      geo_provider: geoProvider,
+      geo_model: geoModel,
+      geo_locale: geoLocale,
+      api_key_mode: geoProvider === "mock" ? "env" : apiKeyMode,
+      temporary_api_key: apiKeyMode === "temporary" ? temporaryApiKey : undefined,
+    },
+  };
 }
 
 export async function POST(request: Request) {

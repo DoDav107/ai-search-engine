@@ -61,6 +61,11 @@ class GeoQueryResult:
     api_key_source: str = "none"
     # Prominence (0..1) of the brand's first mention in the answer; None if absent/error.
     prominence_score: float | None = None
+    # Locale grounding actually applied to this query's web search. ``locale_applied`` is
+    # an ISO country code (e.g. "AU") or "global" (no region grounding). ``locale_method``
+    # records HOW it was applied: native search param, query-text suffix, or none.
+    locale_applied: str = "global"
+    locale_method: str = "none"  # native_param | query_suffix | none
 
     # ----- GEO quality signals (rule-based; see geo_agent.analyze_quality_signals) -----
     # Sentiment of the brand mention.

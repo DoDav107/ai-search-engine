@@ -180,14 +180,14 @@ class EngineClient(ABC):
     def query(self, prompt: str) -> str:
         """Send a query to the engine and return the answer text."""
 
-    def measure(self, prompt: str) -> dict[str, Any]:
-        """Return ``{"text", "web_search_used", "sources"}`` for a measurement query.
+    def measure(self, prompt: str, locale: dict[str, str] | None = None) -> dict[str, Any]:
+        """Return ``{"text", "web_search_used", "sources", "locale_method"}``.
 
-        The default wraps ``query`` (no browsing). Live clients override to add web
-        search and citation capture. Only the SOURCE of the answer differs between
-        engines — brand detection / scoring downstream are identical.
+        The default wraps ``query`` (no browsing, no locale). Live clients override to add
+        web search, citation capture, and locale grounding. Only the SOURCE of the answer
+        differs between engines — brand detection / scoring downstream are identical.
         """
-        return {"text": self.query(prompt), "web_search_used": False, "sources": []}
+        return {"text": self.query(prompt), "web_search_used": False, "sources": [], "locale_method": "none"}
 
 
 class MockEngineClient(EngineClient):
@@ -266,22 +266,26 @@ class OpenAIEngineClient(EngineClient):
         """The shared OpenAI client (reused for competitor extraction)."""
         return self._client
 
-    def measure(self, prompt: str) -> dict[str, Any]:
+    def measure(self, prompt: str, locale: dict[str, str] | None = None) -> dict[str, Any]:
         if self._ws_enabled:
-            return self._client.respond_with_web_search(
+            # OpenAI Responses web_search supports user_location (approximate) natively.
+            res = self._client.respond_with_web_search(
                 _measurement_input(prompt),
                 reasoning_effort=self._ws_reasoning,
                 max_output_tokens=self._ws_max,
                 model=self.model,
                 timeout=self._ws_timeout,
+                user_location=locale,
             )
+            res["locale_method"] = "native_param" if locale else "none"
+            return res
         text = self._client.chat(
             prompt,
             max_completion_tokens=self._measure_tokens,
             reasoning_effort=self._reasoning,
             model=self.model,
         )
-        return {"text": text, "web_search_used": False, "sources": []}
+        return {"text": text, "web_search_used": False, "sources": [], "locale_method": "none"}
 
     def query(self, prompt: str) -> str:
         return self.measure(prompt).get("text", "")
@@ -311,14 +315,31 @@ class _OpenAICompatEngineClient(EngineClient):
 
         self._client = OpenAI(api_key=key, base_url=self._base_url, timeout=timeout)
 
-    def measure(self, prompt: str) -> dict[str, Any]:
-        text_prompt = _measurement_input(prompt) if self._grounded else prompt
+    def _locale_native(self, locale: dict[str, str]) -> dict[str, Any] | None:
+        """Native locale params merged into extra_body, or None if unsupported (→ suffix)."""
+        return None
+
+    def measure(self, prompt: str, locale: dict[str, str] | None = None) -> dict[str, Any]:
+        locale_method = "none"
+        question = prompt
+        extra_body: dict[str, Any] = dict(self._extra_body or {})
+        if locale:
+            native = self._locale_native(locale)
+            if native:
+                extra_body.update(native)
+                locale_method = "native_param"
+            else:
+                # No native locale param for this provider — fall back to a query suffix.
+                question = _localized_question(prompt, locale)
+                locale_method = "query_suffix"
+
+        text_prompt = _measurement_input(question) if self._grounded else question
         kwargs: dict[str, Any] = {
             "model": self.model,
             "messages": [{"role": "user", "content": text_prompt}],
         }
-        if self._extra_body:
-            kwargs["extra_body"] = self._extra_body
+        if extra_body:
+            kwargs["extra_body"] = extra_body
         try:
             response = self._client.chat.completions.create(**kwargs)
         except Exception as exc:  # network/auth/rate — surface as a measurement error
@@ -328,7 +349,8 @@ class _OpenAICompatEngineClient(EngineClient):
         # of URL strings (xAI/Perplexity); map them to the common sources shape.
         raw = getattr(response, "citations", None) or []
         sources = [{"url": str(u), "title": ""} for u in raw if u]
-        return {"text": text, "web_search_used": self._grounded and bool(sources), "sources": sources}
+        return {"text": text, "web_search_used": self._grounded and bool(sources),
+                "sources": sources, "locale_method": locale_method}
 
     def query(self, prompt: str) -> str:
         return self.measure(prompt).get("text", "")
@@ -359,6 +381,14 @@ class PerplexityEngineClient(_OpenAICompatEngineClient):
     _base_url = "https://api.perplexity.ai"
     _grounded = True
 
+    def _locale_native(self, locale: dict[str, str]) -> dict[str, Any] | None:
+        # Sonar supports web_search_options.user_location.country (ISO-2). Confirm shape
+        # against current Perplexity docs.
+        country = locale.get("country")
+        if not country:
+            return None
+        return {"web_search_options": {"user_location": {"country": country}}}
+
 
 class AnthropicEngineClient(EngineClient):
     """Anthropic Claude with the server-side web_search tool enabled (REST via requests)."""
@@ -375,15 +405,25 @@ class AnthropicEngineClient(EngineClient):
         self._max_tokens = max_tokens
         self._timeout = timeout
 
-    def measure(self, prompt: str) -> dict[str, Any]:
+    def measure(self, prompt: str, locale: dict[str, str] | None = None) -> dict[str, Any]:
         import requests
+
+        # Anthropic server-side web search. Confirm the tool version against current docs.
+        web_search_tool: dict[str, Any] = {"type": "web_search_20250305", "name": "web_search"}
+        locale_method = "none"
+        if locale and locale.get("country"):
+            # web_search supports a user_location (approximate) hint natively.
+            user_location: dict[str, str] = {"type": "approximate", "country": locale["country"]}
+            if locale.get("region"):
+                user_location["region"] = locale["region"]
+            web_search_tool["user_location"] = user_location
+            locale_method = "native_param"
 
         payload = {
             "model": self.model,
             "max_tokens": self._max_tokens,
             "messages": [{"role": "user", "content": _measurement_input(prompt)}],
-            # Anthropic server-side web search. Confirm the tool version against current docs.
-            "tools": [{"type": "web_search_20250305", "name": "web_search"}],
+            "tools": [web_search_tool],
         }
         try:
             resp = requests.post(
@@ -418,7 +458,8 @@ class AnthropicEngineClient(EngineClient):
                         urls.add(item["url"])
         sources = [{"url": u, "title": ""} for u in urls]
         return {"text": " ".join(p for p in text_parts if p).strip(),
-                "web_search_used": used or bool(sources), "sources": sources}
+                "web_search_used": used or bool(sources), "sources": sources,
+                "locale_method": locale_method}
 
     def query(self, prompt: str) -> str:
         return self.measure(prompt).get("text", "")
@@ -438,12 +479,20 @@ class GoogleEngineClient(EngineClient):
         self._key = _resolve_api_key("google", api_key)
         self._timeout = timeout
 
-    def measure(self, prompt: str) -> dict[str, Any]:
+    def measure(self, prompt: str, locale: dict[str, str] | None = None) -> dict[str, Any]:
         import requests
+
+        # Gemini's google_search grounding tool exposes no per-request region parameter, so
+        # ground the locale by appending the region to the question (suffix fallback).
+        locale_method = "none"
+        question = prompt
+        if locale and locale.get("region"):
+            question = _localized_question(prompt, locale)
+            locale_method = "query_suffix"
 
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
         payload = {
-            "contents": [{"parts": [{"text": _measurement_input(prompt)}]}],
+            "contents": [{"parts": [{"text": _measurement_input(question)}]}],
             # Google Search grounding tool. Confirm shape against current Gemini docs.
             "tools": [{"google_search": {}}],
         }
@@ -466,7 +515,8 @@ class GoogleEngineClient(EngineClient):
             if web.get("uri"):
                 urls.add(web["uri"])
         sources = [{"url": u, "title": ""} for u in urls]
-        return {"text": text, "web_search_used": bool(grounding) or bool(sources), "sources": sources}
+        return {"text": text, "web_search_used": bool(grounding) or bool(sources),
+                "sources": sources, "locale_method": locale_method}
 
     def query(self, prompt: str) -> str:
         return self.measure(prompt).get("text", "")
@@ -1270,9 +1320,84 @@ def _measurement_input(query: str) -> str:
     )
 
 
+# Minimal ISO-3166 alpha-2 → display-region map for the query-suffix fallback (used when
+# a provider exposes no native locale parameter). Extend as needed; an unknown code falls
+# back to the code itself so grounding still happens, just with a less natural region word.
+COUNTRY_NAMES: dict[str, str] = {
+    "AU": "Australia", "US": "the United States", "GB": "the United Kingdom",
+    "NZ": "New Zealand", "CA": "Canada", "IE": "Ireland", "IN": "India",
+    "SG": "Singapore", "ZA": "South Africa", "DE": "Germany", "FR": "France",
+    "ES": "Spain", "IT": "Italy", "NL": "the Netherlands", "JP": "Japan",
+    "BR": "Brazil", "MX": "Mexico", "AE": "the United Arab Emirates",
+}
+
+
+def _normalize_locale(value: Any) -> dict[str, str] | None:
+    """Coerce a config locale value into ``{"country","region"}`` or None (global).
+
+    Accepts: a code string ("AU"), the literal "global"/"" (→ None), or a dict
+    ``{country, region}`` (region optional — filled from COUNTRY_NAMES). Returns None for
+    anything that resolves to no grounding.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        code = value.strip()
+        if not code or code.lower() == "global":
+            return None
+        country = code.upper()
+        return {"country": country, "region": COUNTRY_NAMES.get(country, code)}
+    if isinstance(value, dict):
+        country = str(value.get("country") or "").strip().upper()
+        region = str(value.get("region") or "").strip()
+        if not country and not region:
+            return None
+        if country and country.lower() == "global":
+            return None
+        return {"country": country, "region": region or COUNTRY_NAMES.get(country, country)}
+    return None
+
+
+def audit_default_locale(config: dict[str, Any]) -> dict[str, str] | None:
+    """The audit/client-level default locale (``geo.locale`` or top-level ``locale``)."""
+    geo = config.get("geo") if isinstance(config.get("geo"), dict) else {}
+    return _normalize_locale(geo.get("locale") if geo.get("locale") is not None else config.get("locale"))
+
+
+def normalize_queries(queries: Any, audit_default: dict[str, str] | None) -> list[dict[str, Any]]:
+    """Resolve the configured query set into ``[{"text", "locale"}]``.
+
+    Each entry may be a plain string (inherits ``audit_default``) or an object
+    ``{text, locale}`` where ``locale`` is a code, ``"global"`` (explicit no grounding),
+    or ``{country, region}``. Resolution order: per-query locale > audit default > global.
+    Backward compatible: a list of plain strings behaves exactly as before plus the
+    audit default.
+    """
+    resolved: list[dict[str, Any]] = []
+    for item in queries or []:
+        if isinstance(item, dict):
+            text = str(item.get("text") or "").strip()
+            if not text:
+                continue
+            locale = audit_default if "locale" not in item else _normalize_locale(item.get("locale"))
+            resolved.append({"text": text, "locale": locale})
+        else:
+            text = str(item or "").strip()
+            if text:
+                resolved.append({"text": text, "locale": audit_default})
+    return resolved
+
+
+def _localized_question(query: str, locale: dict[str, str] | None) -> str:
+    """Append the region to the question text (the suffix fallback). Global → unchanged."""
+    if locale and locale.get("region"):
+        return f"{query} in {locale['region']}"
+    return query
+
+
 def _run_engine(
     client: EngineClient,
-    queries: list[str],
+    queries: list[dict[str, Any]],
     brand: str,
     brand_aliases: list[str],
     competitors: list[str],
@@ -1293,21 +1418,27 @@ def _run_engine(
         return not (text or "").strip()
 
     results: list[GeoQueryResult] = []
-    for i, query in enumerate(queries, 1):
+    for i, item in enumerate(queries, 1):
+        query = item["text"]
+        locale = item.get("locale")
+        locale_applied = locale["country"] if locale and locale.get("country") else "global"
+        locale_method = "none"
         web_search_used = False
         sources: list[dict] = []
         try:
-            res = client.measure(query)
+            res = client.measure(query, locale)
             answer = res.get("text", "")
             web_search_used = bool(res.get("web_search_used"))
             sources = res.get("sources") or []
+            locale_method = res.get("locale_method", "none")
             if _is_empty(answer):
                 # Empty (reasoning ate the budget, or a slow web-search call returned
                 # nothing) — retry once.
-                res = client.measure(query)
+                res = client.measure(query, locale)
                 answer = res.get("text", "")
                 web_search_used = bool(res.get("web_search_used"))
                 sources = res.get("sources") or []
+                locale_method = res.get("locale_method", locale_method)
             if _is_empty(answer):
                 # Still empty: a measurement failure, NOT a genuine "brand absent".
                 result = GeoQueryResult(
@@ -1337,6 +1468,9 @@ def _run_engine(
         # Grounding evidence: whether this engine browses, and how many live sources.
         result.web_grounded = client.web_grounded
         result.sources_count = len(result.sources or [])
+        # Locale grounding actually applied (kept even on error rows, for debuggability).
+        result.locale_applied = locale_applied
+        result.locale_method = locale_method
 
         # detect_brand_mentions early-returns on error, so error rows keep the default
         # (unmeasured) state and are excluded from scoring/visibility.
@@ -1384,7 +1518,8 @@ def run_geo(config: dict[str, Any], progress: Callable[[dict], None] | None = No
     overall score and per-query behaviour match the previous implementation.
     """
     brand = config.get("brand", "Unknown Brand")
-    queries = config.get("queries", [])
+    # Resolve each query into {text, locale}: per-query override > audit default > global.
+    queries = normalize_queries(config.get("queries", []), audit_default_locale(config))
     competitors = config.get("competitors", [])
     brand_aliases = config.get("brand_aliases") or [brand]
     openai_cfg = config.get("openai", {})

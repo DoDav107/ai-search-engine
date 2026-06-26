@@ -21,7 +21,7 @@ def _normalize_url(value: str) -> str:
     return value
 
 
-def _validate(params: dict[str, Any]) -> tuple[str, str, str, list[str], str | None, str | None, str, list[str]]:
+def _validate(params: dict[str, Any]) -> tuple[str, str, str, list[str], str | None, str | None, str | None, str, list[str]]:
     errors: list[str] = []
     client = str(params.get("client") or "").strip()
     brand = str(params.get("brand") or "").strip()
@@ -29,6 +29,7 @@ def _validate(params: dict[str, Any]) -> tuple[str, str, str, list[str], str | N
     queries = [str(q).strip() for q in (params.get("queries") or []) if str(q).strip()]
     geo_provider = str(params.get("geo_provider") or "").strip().lower() or None
     geo_model = str(params.get("geo_model") or "").strip() or None
+    geo_locale = str(params.get("geo_locale") or "").strip() or None
     api_key_mode = str(params.get("api_key_mode") or "env").strip().lower()
 
     if not client:
@@ -45,12 +46,12 @@ def _validate(params: dict[str, Any]) -> tuple[str, str, str, list[str], str | N
     if api_key_mode not in {"env", "temporary"}:
         errors.append("api_key_mode must be 'env' or 'temporary'")
 
-    return client, brand, domain, queries, geo_provider, geo_model, api_key_mode, errors
+    return client, brand, domain, queries, geo_provider, geo_model, geo_locale, api_key_mode, errors
 
 
 def write_audit_configs(params: dict[str, Any], crawl_out: Path, geo_out: Path) -> None:
     """Build dashboard audit configs using the same override path as Streamlit."""
-    client, brand, domain, queries, geo_provider, geo_model, api_key_mode, errors = _validate(params)
+    client, brand, domain, queries, geo_provider, geo_model, geo_locale, api_key_mode, errors = _validate(params)
     if errors:
         raise ValueError("; ".join(errors))
 
@@ -63,6 +64,7 @@ def write_audit_configs(params: dict[str, Any], crawl_out: Path, geo_out: Path) 
         queries=queries,
         geo_provider=geo_provider,
         geo_model=geo_model,
+        geo_locale=geo_locale,
         api_key_source="temporary" if api_key_mode == "temporary" else "env",
     )
     crawl_out.parent.mkdir(parents=True, exist_ok=True)

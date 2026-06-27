@@ -18,9 +18,20 @@ from typing import Any
 
 import yaml
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
 
 def load_geo_options(path: str = "config/geo_config.yaml") -> dict[str, Any]:
+    from dotenv import load_dotenv
+
     from src.agents.geo_agent import build_catalog
+    from src.reporting.env_key import allow_env_key_write
+
+    # Reflect the SAME .env the pipeline loads (src/clients/openai_client.py calls
+    # load_dotenv at import). The web server's bare process env usually lacks these keys,
+    # which previously produced a false "no key configured" warning. Loading the repo .env
+    # here makes key presence match what an actual audit run would see.
+    load_dotenv(REPO_ROOT / ".env")
 
     config_path = Path(path)
     with config_path.open("r", encoding="utf-8") as stream:
@@ -31,6 +42,8 @@ def load_geo_options(path: str = "config/geo_config.yaml") -> dict[str, Any]:
         env_key = provider.get("env_key_name")
         # No env var (mock) needs no key; otherwise report whether it's configured.
         provider["key_present"] = bool(os.environ.get(env_key)) if env_key else True
+    # Whether the opt-in "save key to server .env" feature is enabled (default off).
+    catalog["allow_env_key_write"] = allow_env_key_write()
     return catalog
 
 

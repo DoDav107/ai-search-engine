@@ -33,6 +33,16 @@ cp .env.example .env
 
 The key is only needed if you switch `engine` in `config/geo_config.yaml` from `"mock"` to `"anthropic"` or `"openai"`. All other functionality — crawling, SEO scoring, recommendations, dashboard — runs without it. The `.env` file is gitignored; never commit it.
 
+**Saving keys from the dashboard (`ALLOW_ENV_KEY_WRITE`, default off):** The New Audit form
+can optionally write a provider key into the server `.env` ("Save this key to the server
+for future audits"). This is **disabled by default** and only appears/works when
+`ALLOW_ENV_KEY_WRITE=true` is set in the server `.env`. It is intended for **local/trusted,
+single-user use only** — it persists a secret to disk. **Keep it disabled on any public or
+multi-user/hosted deployment.** The write happens server-side only (`src/reporting/env_key.py`);
+the key is sent over a dedicated route on stdin and is never echoed back to the browser,
+never logged, and never stored in reports or per-job configs. A server/pipeline restart may
+be needed for a freshly saved key to take effect.
+
 ---
 
 ## 2. Usage

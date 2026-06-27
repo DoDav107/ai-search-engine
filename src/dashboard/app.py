@@ -464,6 +464,7 @@ def _geo_options() -> dict[str, Any]:
         return {
             "default_provider": "openai",
             "default_model": "gpt-5.5",
+            "allow_env_key_write": False,
             "providers": {
                 "openai": {
                     "label": "OpenAI",
@@ -589,10 +590,18 @@ with st.sidebar:
         na_api_key_mode = "env"
         na_temporary_key = ""
         if na_provider != "mock":
+            # Opt-in "save to server" mode only appears when the server enables it (default off).
+            _allow_save = bool(_geo_opts.get("allow_env_key_write"))
+            _mode_opts = ["env", "temporary"] + (["save"] if _allow_save else [])
+            _mode_labels = {
+                "env": "Use saved server key from .env",
+                "temporary": "Provide temporary key for this audit",
+                "save": "Save this key to the server for future audits",
+            }
             na_api_key_mode = st.radio(
                 "API key mode",
-                ["env", "temporary"],
-                format_func=lambda v: "Use saved server key from .env" if v == "env" else "Provide temporary key for this audit",
+                _mode_opts,
+                format_func=lambda v: _mode_labels.get(v, v),
                 horizontal=False,
                 key="na_api_key_mode",
             )
@@ -602,14 +611,21 @@ with st.sidebar:
                     f"No {_sel_cfg.get('env_key_name') or 'API key'} configured on the server — "
                     "add it to your .env or choose “Provide temporary key for this audit”."
                 )
-            if na_api_key_mode == "temporary":
+            if na_api_key_mode in ("temporary", "save"):
+                _key_label = "API key (saved to server .env)" if na_api_key_mode == "save" else "Temporary API key"
                 na_temporary_key = st.text_input(
-                    "Temporary API key",
+                    _key_label,
                     type="password",
                     key="na_temporary_api_key",
                     placeholder=str(_sel_cfg.get("env_key_name") or "API key"),
                 )
-            st.caption("Temporary keys are used only for this audit and are not saved to reports, config, logs, or git.")
+            if na_api_key_mode == "save":
+                st.caption(
+                    f"Writes {_sel_cfg.get('env_key_name') or 'the key'} to the server's .env "
+                    "(local/trusted use only). A server/pipeline restart may be needed to take effect."
+                )
+            else:
+                st.caption("Temporary keys are used only for this audit and are not saved to reports, config, logs, or git.")
         _q_count = len([q for q in (na_queries or "").splitlines() if q.strip()])
         st.caption(f"{_q_count}/{MAX_QUERIES} queries · each runs a live web-search measurement (paid).")
         na_confirm = st.checkbox(
@@ -621,14 +637,26 @@ with st.sidebar:
                 _errs.append("Choose an AI provider.")
             if not na_model:
                 _errs.append("Choose an AI model.")
-            if na_api_key_mode == "temporary" and na_provider != "mock" and not na_temporary_key.strip():
-                _errs.append("Enter a temporary API key or choose the saved server key.")
+            if na_api_key_mode in ("temporary", "save") and na_provider != "mock" and not na_temporary_key.strip():
+                _errs.append("Enter an API key or choose the saved server key.")
             if not na_confirm:
                 _errs.append("Tick the confirmation box before running.")
+            # "save" mode: persist the key to .env first (server-side, gated). On failure,
+            # surface the message and don't run. The key is never stored in the report/config.
+            if not _errs and na_api_key_mode == "save" and na_provider != "mock":
+                from src.reporting.env_key import save_provider_key
+                _save_res = save_provider_key(na_provider, na_temporary_key.strip())
+                if not _save_res.get("ok"):
+                    _errs.append(_save_res.get("message") or "Could not save the key to the server.")
+                else:
+                    st.success(_save_res.get("message") or "Key saved to the server .env.")
             if _errs:
                 for _e in _errs:
                     st.error(_e)
             else:
+                # "save" runs this audit with the key as a temporary key (works before any
+                # restart); it's already persisted above for future runs.
+                _use_temp = na_api_key_mode in ("temporary", "save")
                 st.session_state["pending_audit"] = {
                     "client": _c,
                     "brand": _b,
@@ -637,8 +665,8 @@ with st.sidebar:
                     "geo_provider": na_provider,
                     "geo_model": na_model,
                     "geo_locale": na_locale,
-                    "api_key_mode": na_api_key_mode,
-                    "temporary_api_key": na_temporary_key.strip() if na_api_key_mode == "temporary" else "",
+                    "api_key_mode": "temporary" if _use_temp else "env",
+                    "temporary_api_key": na_temporary_key.strip() if _use_temp else "",
                 }
                 st.rerun()
 

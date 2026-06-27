@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { Copy, Check, Zap } from "lucide-react";
 import {
   GLASS,
@@ -10,7 +10,7 @@ import {
   type Recommendation,
   type Report,
 } from "@/lib/report";
-import { Section, sectionItem } from "./section";
+import { Section, sectionContainer, sectionItem } from "./section";
 
 function PriorityBadge({ priority }: { priority: string }) {
   const color = priorityColor(priority);
@@ -101,6 +101,7 @@ function RecCard({ rec }: { rec: Recommendation }) {
 }
 
 export function RecommendationsSection({ report }: { report: Report }) {
+  const reduce = useReducedMotion();
   const seo = report.seo_recommendations ?? [];
   const geo = report.geo_recommendations ?? [];
 
@@ -150,14 +151,20 @@ export function RecommendationsSection({ report }: { report: Report }) {
       <Section title="SEO Recommendations" subtitle={`${seoSorted.length} items`}>
         {seoSorted.length === 0 ? (
           <p className={`${GLASS} p-5 text-sm text-muted-foreground`}>
-            No SEO recommendations in the report.
+            No SEO recommendations are stored in this report yet. Run a new audit from the dashboard.
           </p>
         ) : (
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+          <motion.div
+            initial={reduce ? "show" : "hidden"}
+            whileInView="show"
+            viewport={{ once: true, amount: 0.1 }}
+            variants={sectionContainer}
+            className="grid grid-cols-1 gap-5 lg:grid-cols-2"
+          >
             {seoSorted.map((rec, i) => (
               <RecCard key={`seo-${rec.title}-${i}`} rec={rec} />
             ))}
-          </div>
+          </motion.div>
         )}
       </Section>
 
@@ -165,14 +172,20 @@ export function RecommendationsSection({ report }: { report: Report }) {
       <Section title="GEO Recommendations" subtitle={`${geoSorted.length} items`}>
         {geoSorted.length === 0 ? (
           <p className={`${GLASS} p-5 text-sm text-muted-foreground`}>
-            No GEO recommendations in the report.
+            No GEO recommendations are stored in this report yet. Run a new audit from the dashboard.
           </p>
         ) : (
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+          <motion.div
+            initial={reduce ? "show" : "hidden"}
+            whileInView="show"
+            viewport={{ once: true, amount: 0.1 }}
+            variants={sectionContainer}
+            className="grid grid-cols-1 gap-5 lg:grid-cols-2"
+          >
             {geoSorted.map((rec, i) => (
               <RecCard key={`geo-${rec.title}-${i}`} rec={rec} />
             ))}
-          </div>
+          </motion.div>
         )}
       </Section>
     </>

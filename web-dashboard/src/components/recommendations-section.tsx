@@ -10,7 +10,32 @@ import {
   type Recommendation,
   type Report,
 } from "@/lib/report";
-import { Section, sectionContainer, sectionItem } from "./section";
+import { Section, sectionItem } from "./section";
+
+// Recommendation items SHOULD be objects, but render defensively: a plain-string item or
+// an object missing fields must still show its available text, never a blank card.
+type RawRec = Recommendation | string;
+const _KNOWN = new Set([
+  "area", "title", "priority", "scope", "issue", "why_it_matters", "recommendation", "draft",
+]);
+
+function asRec(item: RawRec): Recommendation {
+  if (typeof item === "string") {
+    return { area: "", title: "", priority: "", scope: "", issue: "",
+      why_it_matters: "", recommendation: item, draft: "" };
+  }
+  return item ?? ({ area: "", title: "", priority: "", scope: "", issue: "",
+    why_it_matters: "", recommendation: "", draft: "" } as Recommendation);
+}
+
+// Any string value on the object that isn't one of the known fields — so an unexpected
+// shape (e.g. {text: "..."}) still surfaces its text instead of rendering empty.
+function extraText(rec: Recommendation): string {
+  return Object.entries(rec as Record<string, unknown>)
+    .filter(([k, v]) => !_KNOWN.has(k) && typeof v === "string" && v.trim())
+    .map(([, v]) => String(v))
+    .join(" · ");
+}
 
 function PriorityBadge({ priority }: { priority: string }) {
   const color = priorityColor(priority);
@@ -69,41 +94,69 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function RecCard({ rec }: { rec: Recommendation }) {
-  return (
-    <motion.div variants={sectionItem} className={`${GLASS} flex flex-col gap-4 p-5 sm:p-6`}>
-      <div className="flex items-start justify-between gap-3">
-        <h4 className="text-base font-semibold leading-snug">{rec.title}</h4>
-        <PriorityBadge priority={rec.priority} />
-      </div>
-      {rec.scope && (
-        <p className="-mt-2 text-xs text-muted-foreground">{rec.scope}</p>
-      )}
-      <Field label="Issue">{rec.issue}</Field>
-      <Field label="Why it matters">{rec.why_it_matters}</Field>
-      <Field label="Recommendation">{rec.recommendation}</Field>
+// Self-contained mount animation (NOT whileInView/variants): the card always settles at
+// opacity 1 on mount, so content can never be left stuck-hidden by viewport/propagation
+// orchestration (the previous blank-card failure mode). reduce-motion → no animation.
+function RecCard({ rec, index, reduce }: { rec: Recommendation; index: number; reduce: boolean }) {
+  const fields: [string, string][] = (
+    [
+      ["Issue", rec.issue],
+      ["Why it matters", rec.why_it_matters],
+      ["Recommendation", rec.recommendation],
+    ] as [string, string | undefined][]
+  ).filter(([, v]) => !!(v && v.trim())) as [string, string][];
 
-      {rec.draft && rec.draft.trim() && (
+  const draft = (rec.draft ?? "").trim();
+  const scope = (rec.scope ?? "").trim();
+  const extra = extraText(rec);
+  // Header text falls back through the available fields so it's never blank.
+  const title =
+    (rec.title || rec.recommendation || rec.issue || scope || extra || "Recommendation").trim();
+  // If none of the structured fields/draft/scope rendered, surface any text we do have.
+  const bodyEmpty = fields.length === 0 && !draft && !scope;
+
+  return (
+    <motion.div
+      initial={reduce ? false : { opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, delay: Math.min(index * 0.05, 0.3) }}
+      className={`${GLASS} flex flex-col gap-4 p-5 sm:p-6`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <h4 className="text-base font-semibold leading-snug text-foreground">{title}</h4>
+        {rec.priority ? <PriorityBadge priority={rec.priority} /> : null}
+      </div>
+      {scope && <p className="-mt-2 text-xs text-muted-foreground">{scope}</p>}
+      {fields.map(([label, value]) => (
+        <Field key={label} label={label}>{value}</Field>
+      ))}
+
+      {draft && (
         <div>
           <div className="mb-1.5 flex items-center justify-between">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Draft fix
             </p>
-            <CopyButton text={rec.draft} />
+            <CopyButton text={draft} />
           </div>
           <pre className="max-h-64 overflow-auto rounded-xl border border-white/10 bg-black/30 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words text-foreground/85">
-            {rec.draft}
+            {draft}
           </pre>
         </div>
       )}
+
+      {/* Last-resort fallback so a sparse/unknown item never renders an empty card. */}
+      {bodyEmpty && extra && <p className="text-sm leading-relaxed text-foreground/85">{extra}</p>}
     </motion.div>
   );
 }
 
 export function RecommendationsSection({ report }: { report: Report }) {
-  const reduce = useReducedMotion();
-  const seo = report.seo_recommendations ?? [];
-  const geo = report.geo_recommendations ?? [];
+  const reduce = useReducedMotion() ?? false;
+  // Normalise every item to a safe object up front (string item → object; missing fields
+  // filled), so sorting and rendering never touch undefined fields.
+  const seo = ((report.seo_recommendations ?? []) as RawRec[]).map(asRec);
+  const geo = ((report.geo_recommendations ?? []) as RawRec[]).map(asRec);
 
   const seoSorted = sortByPriority(seo);
   const geoSorted = sortByPriority(geo);
@@ -154,17 +207,11 @@ export function RecommendationsSection({ report }: { report: Report }) {
             No SEO recommendations are stored in this report yet. Run a new audit from the dashboard.
           </p>
         ) : (
-          <motion.div
-            initial={reduce ? "show" : "hidden"}
-            whileInView="show"
-            viewport={{ once: true, amount: 0.1 }}
-            variants={sectionContainer}
-            className="grid grid-cols-1 gap-5 lg:grid-cols-2"
-          >
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
             {seoSorted.map((rec, i) => (
-              <RecCard key={`seo-${rec.title}-${i}`} rec={rec} />
+              <RecCard key={`seo-${rec.title}-${i}`} rec={rec} index={i} reduce={reduce} />
             ))}
-          </motion.div>
+          </div>
         )}
       </Section>
 
@@ -175,17 +222,11 @@ export function RecommendationsSection({ report }: { report: Report }) {
             No GEO recommendations are stored in this report yet. Run a new audit from the dashboard.
           </p>
         ) : (
-          <motion.div
-            initial={reduce ? "show" : "hidden"}
-            whileInView="show"
-            viewport={{ once: true, amount: 0.1 }}
-            variants={sectionContainer}
-            className="grid grid-cols-1 gap-5 lg:grid-cols-2"
-          >
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
             {geoSorted.map((rec, i) => (
-              <RecCard key={`geo-${rec.title}-${i}`} rec={rec} />
+              <RecCard key={`geo-${rec.title}-${i}`} rec={rec} index={i} reduce={reduce} />
             ))}
-          </motion.div>
+          </div>
         )}
       </Section>
     </>

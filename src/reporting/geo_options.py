@@ -25,7 +25,7 @@ def load_geo_options(path: str = "config/geo_config.yaml") -> dict[str, Any]:
     from dotenv import load_dotenv
 
     from src.agents.geo_agent import build_catalog
-    from src.reporting.env_key import allow_env_key_write
+    from src.security.env_writer import allow_env_key_write
 
     # Reflect the SAME .env the pipeline loads (src/clients/openai_client.py calls
     # load_dotenv at import). The web server's bare process env usually lacks these keys,

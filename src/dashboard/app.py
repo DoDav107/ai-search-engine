@@ -589,43 +589,38 @@ with st.sidebar:
         )
         na_api_key_mode = "env"
         na_temporary_key = ""
+        na_save_key = False
+        _sel_cfg = _providers.get(na_provider) or {}
         if na_provider != "mock":
-            # Opt-in "save to server" mode only appears when the server enables it (default off).
-            _allow_save = bool(_geo_opts.get("allow_env_key_write"))
-            _mode_opts = ["env", "temporary"] + (["save"] if _allow_save else [])
-            _mode_labels = {
-                "env": "Use saved server key from .env",
-                "temporary": "Provide temporary key for this audit",
-                "save": "Save this key to the server for future audits",
-            }
             na_api_key_mode = st.radio(
                 "API key mode",
-                _mode_opts,
-                format_func=lambda v: _mode_labels.get(v, v),
+                ["env", "temporary"],
+                format_func=lambda v: "Use saved server key from .env" if v == "env" else "Provide temporary key for this audit",
                 horizontal=False,
                 key="na_api_key_mode",
             )
-            _sel_cfg = _providers.get(na_provider) or {}
             if na_api_key_mode == "env" and not _sel_cfg.get("key_present", True):
                 st.warning(
                     f"No {_sel_cfg.get('env_key_name') or 'API key'} configured on the server — "
                     "add it to your .env or choose “Provide temporary key for this audit”."
                 )
-            if na_api_key_mode in ("temporary", "save"):
-                _key_label = "API key (saved to server .env)" if na_api_key_mode == "save" else "Temporary API key"
+            if na_api_key_mode == "temporary":
                 na_temporary_key = st.text_input(
-                    _key_label,
+                    "Temporary API key",
                     type="password",
                     key="na_temporary_api_key",
                     placeholder=str(_sel_cfg.get("env_key_name") or "API key"),
                 )
-            if na_api_key_mode == "save":
-                st.caption(
-                    f"Writes {_sel_cfg.get('env_key_name') or 'the key'} to the server's .env "
-                    "(local/trusted use only). A server/pipeline restart may be needed to take effect."
-                )
-            else:
-                st.caption("Temporary keys are used only for this audit and are not saved to reports, config, logs, or git.")
+                # Opt-in "save to .env" — only when the server enables it. The label is
+                # derived LIVE from the selected provider so the key always matches it.
+                if bool(_geo_opts.get("allow_env_key_write")):
+                    _prov_label = _sel_cfg.get("label") or na_provider
+                    _env_var = _sel_cfg.get("env_key_name") or "API key"
+                    na_save_key = st.checkbox(
+                        f"Save this key to .env as the {_prov_label} server key ({_env_var}) — local only",
+                        key="na_save_key",
+                    )
+            st.caption("Temporary keys are used only for this audit and are not saved to reports, config, logs, or git.")
         _q_count = len([q for q in (na_queries or "").splitlines() if q.strip()])
         st.caption(f"{_q_count}/{MAX_QUERIES} queries · each runs a live web-search measurement (paid).")
         na_confirm = st.checkbox(
@@ -637,26 +632,27 @@ with st.sidebar:
                 _errs.append("Choose an AI provider.")
             if not na_model:
                 _errs.append("Choose an AI model.")
-            if na_api_key_mode in ("temporary", "save") and na_provider != "mock" and not na_temporary_key.strip():
-                _errs.append("Enter an API key or choose the saved server key.")
+            if na_api_key_mode == "temporary" and na_provider != "mock" and not na_temporary_key.strip():
+                _errs.append("Enter a temporary API key or choose the saved server key.")
             if not na_confirm:
                 _errs.append("Tick the confirmation box before running.")
-            # "save" mode: persist the key to .env first (server-side, gated). On failure,
-            # surface the message and don't run. The key is never stored in the report/config.
-            if not _errs and na_api_key_mode == "save" and na_provider != "mock":
-                from src.reporting.env_key import save_provider_key
-                _save_res = save_provider_key(na_provider, na_temporary_key.strip())
-                if not _save_res.get("ok"):
-                    _errs.append(_save_res.get("message") or "Could not save the key to the server.")
+            # Opt-in save: persist the SELECTED-provider key to .env (server-side, gated +
+            # provider-match validated). A refusal is surfaced but doesn't block the run;
+            # the key is never stored in the report/config either way.
+            if not _errs and na_api_key_mode == "temporary" and na_save_key and na_provider != "mock":
+                from src.security.env_writer import save_provider_key_to_env
+                _save_res = save_provider_key_to_env(na_provider, na_temporary_key.strip())
+                if _save_res.get("ok"):
+                    st.success(
+                        f"Saved {_save_res['env_var']} for {_save_res['provider']} (…{_save_res['last4']})."
+                    )
                 else:
-                    st.success(_save_res.get("message") or "Key saved to the server .env.")
+                    st.warning(f"Not saved: {_save_res.get('message') or 'key was rejected.'}")
             if _errs:
                 for _e in _errs:
                     st.error(_e)
             else:
-                # "save" runs this audit with the key as a temporary key (works before any
-                # restart); it's already persisted above for future runs.
-                _use_temp = na_api_key_mode in ("temporary", "save")
+                _use_temp = na_api_key_mode == "temporary"
                 st.session_state["pending_audit"] = {
                     "client": _c,
                     "brand": _b,

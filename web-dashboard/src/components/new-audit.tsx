@@ -123,8 +123,9 @@ export function NewAudit({ onComplete }: { onComplete: () => void }) {
   const [geoProvider, setGeoProvider] = useState("openai");
   const [geoModel, setGeoModel] = useState("gpt-5.5");
   const [geoLocale, setGeoLocale] = useState("global");
-  const [apiKeyMode, setApiKeyMode] = useState<"env" | "temporary" | "save">("env");
+  const [apiKeyMode, setApiKeyMode] = useState<"env" | "temporary">("env");
   const [temporaryApiKey, setTemporaryApiKey] = useState("");
+  const [saveKeyToEnv, setSaveKeyToEnv] = useState(false);
   const [saveKeyNote, setSaveKeyNote] = useState<string | null>(null);
   const [confirm, setConfirm] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
@@ -146,8 +147,9 @@ export function NewAudit({ onComplete }: { onComplete: () => void }) {
   const selectedProvider = providers[geoProvider];
   const models = selectedProvider?.models ?? [];
   const allowEnvKeyWrite = geoOptions?.allow_env_key_write === true;
-  // The key input is shown for "provide temporary" and "save to server" modes.
-  const needsKeyInput = apiKeyMode === "temporary" || apiKeyMode === "save";
+  const needsKeyInput = apiKeyMode === "temporary";
+  // "Save to .env" is an opt-in checkbox under the temporary key (only when enabled).
+  const showSaveKey = needsKeyInput && allowEnvKeyWrite && geoProvider !== "mock";
   // Surface a clear message when the saved-key path is chosen but the key isn't configured.
   const keyMissing =
     apiKeyMode === "env" &&
@@ -187,10 +189,12 @@ export function NewAudit({ onComplete }: { onComplete: () => void }) {
     setGeoProvider(provider);
     const nextModels = providers[provider]?.models ?? [];
     setGeoModel(nextModels[0]?.id ?? "");
-    if (provider === "mock") {
-      setApiKeyMode("env");
-      setTemporaryApiKey("");
-    }
+    // The key is always the SELECTED provider's key — clear any prior key/save intent so
+    // it can't carry over to a different provider.
+    setTemporaryApiKey("");
+    setSaveKeyToEnv(false);
+    setSaveKeyNote(null);
+    if (provider === "mock") setApiKeyMode("env");
   }
 
   async function handleSubmit() {
@@ -209,31 +213,30 @@ export function NewAudit({ onComplete }: { onComplete: () => void }) {
     setSaveKeyNote(null);
     completedRef.current = false;
 
-    // "Save to server" mode: persist the key first (server-side, gated). The key is sent
-    // to a dedicated route and never included in the audit request/report.
-    if (apiKeyMode === "save" && geoProvider !== "mock") {
+    // Opt-in: persist this SELECTED-provider key to the server .env first (gated +
+    // provider-match validated server-side). Sent to a dedicated route; never part of the
+    // audit request/report. A refusal is surfaced but does not block the run (the key is
+    // still used as a temporary key for this audit).
+    if (apiKeyMode === "temporary" && saveKeyToEnv && geoProvider !== "mock") {
       try {
-        const saveRes = await fetch("/api/audit/save-key", {
+        const saveRes = await fetch("/api/save-key", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ provider: geoProvider, key: temporaryApiKey }),
         });
         const saveData = await saveRes.json();
-        if (!saveRes.ok || !saveData.ok) {
-          setErrors([saveData.message ?? "Could not save the key to the server."]);
-          return;
+        if (saveRes.ok && saveData.ok) {
+          setSaveKeyNote(`Saved ${saveData.env_var} for ${saveData.provider} (…${saveData.last4}).`);
+        } else {
+          setSaveKeyNote(`Not saved: ${saveData.message ?? "key was rejected."}`);
         }
-        setSaveKeyNote(saveData.message ?? "Key saved to the server .env.");
       } catch (e) {
-        setErrors([`Could not save the key: ${String(e)}`]);
-        return;
+        setSaveKeyNote(`Not saved: ${String(e)}`);
       }
     }
 
     try {
-      // "save" runs this audit with the key as a temporary key (so it works immediately,
-      // before any restart); it's already persisted above for future runs.
-      const useTempKey = apiKeyMode === "temporary" || apiKeyMode === "save";
+      const useTempKey = apiKeyMode === "temporary" && geoProvider !== "mock";
       const res = await fetch("/api/audit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -245,8 +248,8 @@ export function NewAudit({ onComplete }: { onComplete: () => void }) {
           geo_provider: geoProvider,
           geo_model: geoModel,
           geo_locale: geoLocale,
-          api_key_mode: geoProvider === "mock" || !useTempKey ? "env" : "temporary",
-          temporary_api_key: useTempKey && geoProvider !== "mock" ? temporaryApiKey : undefined,
+          api_key_mode: useTempKey ? "temporary" : "env",
+          temporary_api_key: useTempKey ? temporaryApiKey : undefined,
         }),
       });
       const data = await res.json();
@@ -468,17 +471,6 @@ export function NewAudit({ onComplete }: { onComplete: () => void }) {
                   />
                   Provide temporary key
                 </label>
-                {allowEnvKeyWrite && (
-                  <label className="flex items-center gap-2 text-xs text-muted-foreground sm:col-span-2">
-                    <input
-                      type="radio"
-                      name="api-key-mode"
-                      checked={apiKeyMode === "save"}
-                      onChange={() => setApiKeyMode("save")}
-                    />
-                    Save this key to the server for future audits
-                  </label>
-                )}
               </div>
               {keyMissing && (
                 <p className="mt-2 flex items-start gap-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-[11px] leading-relaxed text-amber-200/90">
@@ -492,7 +484,7 @@ export function NewAudit({ onComplete }: { onComplete: () => void }) {
               {needsKeyInput && (
                 <label className="mt-3 block text-sm">
                   <span className="mb-1 block text-xs font-medium text-muted-foreground">
-                    {apiKeyMode === "save" ? "API key (saved to server .env)" : "Temporary API key"}
+                    Temporary API key
                   </span>
                   <input
                     type="password"
@@ -504,11 +496,19 @@ export function NewAudit({ onComplete }: { onComplete: () => void }) {
                   />
                 </label>
               )}
-              {apiKeyMode === "save" && (
-                <p className="mt-2 text-[11px] leading-relaxed text-amber-200/80">
-                  Writes {selectedProvider?.env_key_name ?? "the key"} to the server&apos;s .env (local/trusted
-                  use only). A server/pipeline restart may be needed for it to take effect.
-                </p>
+              {showSaveKey && (
+                <label className="mt-3 flex items-start gap-2 text-[11px] leading-relaxed text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={saveKeyToEnv}
+                    onChange={(e) => setSaveKeyToEnv(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    Save this key to .env as the {selectedProvider?.label ?? geoProvider} server key
+                    ({selectedProvider?.env_key_name ?? "API key"}) — local only
+                  </span>
+                </label>
               )}
               {saveKeyNote && (
                 <p className="mt-2 flex items-start gap-2 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-[11px] leading-relaxed text-success">

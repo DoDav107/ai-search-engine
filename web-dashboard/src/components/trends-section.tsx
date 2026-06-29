@@ -273,6 +273,11 @@ export function TrendsSection({ defaultClient }: { defaultClient?: string }) {
                 <Info className="h-3 w-3" aria-hidden /> same-day — may reflect run-to-run variance
               </span>
             )}
+            {last?.factor_set_shift && (
+              <span className="ml-2 inline-flex items-center gap-1 rounded-md border border-warning/30 bg-warning/10 px-1.5 py-0.5 text-warning">
+                <Info className="h-3 w-3" aria-hidden /> different SEO factor set — SEO/Unified change isn&apos;t a real site change
+              </span>
+            )}
           </motion.p>
           <motion.div variants={sectionItem} className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {SERIES.map((s) => (

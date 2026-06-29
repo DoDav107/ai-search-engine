@@ -29,6 +29,20 @@ def _sitewide_message(factor: str, count: int) -> str:
         "image_alt": "Image alt coverage is low on {count} pages — improve ALT text site-wide for SEO and accessibility.",
         "word_count": "Content is too short on {count} pages — add more useful copy site-wide to avoid thin content penalties.",
         "structured_data": "Structured data is absent on {count} pages — add JSON-LD markup site-wide to improve search engine understanding.",
+        "crawl_access": "Crawl access failed on {count} pages — make public HTML accessible to legitimate crawlers before on-page SEO can be fully audited.",
+        "audit_coverage": "SEO audit coverage is limited on {count} pages — crawlable HTML is needed for full title, meta, headings, content, image, and schema checks.",
+        "https_enabled": "HTTPS is missing on {count} pages — serve audited pages over HTTPS for trust, browser compatibility, and search eligibility.",
+        "domain_brand_signal": "Brand/domain alignment needs review on {count} pages — reinforce the brand with crawlable metadata, schema, and visible copy.",
+        "canonical_url_shape": "Canonical URL shape needs cleanup on {count} pages — audit clean absolute URLs without tracking query strings or fragments.",
+        "heading_structure": "Sub-heading hierarchy is weak on {count} pages — add ordered H2/H3 sections site-wide for clearer structure.",
+        "open_graph": "Open Graph tags are missing or partial on {count} pages — add og:title/description/image for richer social and AI previews.",
+        "twitter_card": "Twitter card tags are missing on {count} pages — add twitter:card metadata for better link previews on X.",
+        "viewport_meta": "Mobile viewport tag is missing or non-responsive on {count} pages — add width=device-width for mobile rendering.",
+        "html_lang": "The page language is undeclared on {count} pages — add a lang attribute to <html> site-wide.",
+        "robots_meta": "Robots directives block indexing on {count} pages — remove noindex/nofollow where pages should be discoverable.",
+        "internal_links": "Internal linking is thin on {count} pages — add contextual links between related pages to aid crawl depth.",
+        "favicon": "A favicon is missing on {count} pages — add one for brand recognition in tabs and search results.",
+        "hreflang": "No hreflang annotations on {count} pages — add them only if the site targets multiple languages/regions.",
     }
     return templates.get(factor, "Issue found on {count} pages — address this SEO factor site-wide.").format(count=count)
 

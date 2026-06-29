@@ -260,6 +260,11 @@ def run_pipeline(
     geo_assessment, geo_recommendations = build_geo_recommendations(
         geo_report, advisory_config, page_content=page_content
     )
+    # Narrative SEO assessment — mirrors the GEO one, same provider/model path, grounded
+    # strictly in the crawl/factor figures.
+    from src.agents.geo_advisor import build_seo_assessment
+    from src.engine.extractors import factor_set_version
+    seo_assessment = build_seo_assessment(seo_report, advisory_config)
 
     seo_weight, geo_weight = _normalize_weights(pipeline_config)
     unified_score = round(seo_weight * seo_score + geo_weight * geo_report.geo_score, 1)
@@ -276,6 +281,8 @@ def run_pipeline(
         seo_recommendations=seo_recommendations,
         geo_recommendations=geo_recommendations,
         geo_assessment=geo_assessment,
+        seo_assessment=seo_assessment,
+        factor_set_version=factor_set_version(seo_report),
         audit_settings=geo_config.get("audit_settings", {}),
     )
     _emit({"phase": "saving", "message": "Saving report (latest + history) and PDF…"})

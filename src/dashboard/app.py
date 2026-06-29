@@ -68,6 +68,15 @@ _FACTOR_LABEL: dict[str, str] = {
     "https_enabled": "HTTPS",
     "domain_brand_signal": "Brand/domain signal",
     "canonical_url_shape": "Canonical URL shape",
+    "heading_structure": "Heading structure (H2/H3)",
+    "open_graph": "Open Graph tags",
+    "twitter_card": "Twitter card",
+    "viewport_meta": "Mobile viewport",
+    "html_lang": "Language attribute",
+    "robots_meta": "Robots meta directive",
+    "internal_links": "Internal links",
+    "favicon": "Favicon",
+    "hreflang": "hreflang annotations",
 }
 
 
@@ -1038,6 +1047,10 @@ def _render_trends(default_brand: str) -> None:
     _threshold = min_interval_hours()
     low_conf = low_confidence_flags(xs, _threshold)
     _last_same_day = low_conf[-1]
+    # Factor-set continuity: if the latest two runs were scored with different factor sets
+    # (e.g. an older report predating new SEO factors), the SEO/Unified delta isn't a real
+    # change — flag it rather than rendering a misleading movement.
+    _last_factor_shift = str(last_p.get("factor_set_version") or "legacy") != str(prev_p.get("factor_set_version") or "legacy")
 
     def _num(payload: dict, key: str) -> float | None:
         v = payload.get(key)
@@ -1053,6 +1066,11 @@ def _render_trends(default_brand: str) -> None:
         st.caption(
             f"Change since previous run · {runs[-2][0].strftime('%d %b %Y %H:%M UTC')} "
             f"→ {runs[-1][0].strftime('%d %b %Y %H:%M UTC')}"
+        )
+    if _last_factor_shift:
+        st.caption(
+            "⚠️ These two runs were scored with different SEO factor sets — the SEO/Unified "
+            "change reflects added checks, not a real site change. Treat it as low-confidence."
         )
     metrics = [
         ("Unified", _num(last_p, "unified_score"), _num(prev_p, "unified_score")),
@@ -1155,6 +1173,14 @@ _render_trends(brand)
 # SEO Breakdown
 # ---------------------------------------------------------------------------
 st.markdown("## 🔍 SEO Breakdown")
+
+# AI-generated SEO assessment — same callout treatment as the GEO assessment.
+seo_assessment = (combined.get("seo_assessment") or "").strip()
+if seo_assessment:
+    st.markdown(
+        f"<div class='rec' style='border-left-color:{ACCENT};'>{escape(seo_assessment)}</div>",
+        unsafe_allow_html=True,
+    )
 
 if scored_pages:
     # ---- Factor-level breakdown: pass/warn/fail counts per factor ----

@@ -136,6 +136,8 @@ export type Report = {
   seo_recommendations?: Recommendation[];
   geo_recommendations?: Recommendation[];
   geo_assessment?: string;
+  seo_assessment?: string;
+  factor_set_version?: string;
   audit_settings?: {
     client?: string;
     brand?: string;
@@ -159,6 +161,10 @@ export type TrendRun = {
   subject_sov: number | null;
   // True when this run's gap to the PREVIOUS run is below the noise-guard threshold.
   low_confidence: boolean;
+  // Factor-set id this run was scored with, and whether it differs from the previous run
+  // (a different factor set means SEO/Unified deltas aren't a real site change).
+  factor_set_version?: string;
+  factor_set_shift?: boolean;
 };
 export type TrendSovSeries = { name: string; is_subject: boolean; values: (number | null)[] };
 export type TrendQueryPoint = { prominence: number | null; mentioned: boolean };
@@ -227,6 +233,15 @@ const FACTOR_LABELS: Record<string, string> = {
   https_enabled: "HTTPS",
   domain_brand_signal: "Brand/domain signal",
   canonical_url_shape: "Canonical URL shape",
+  heading_structure: "Heading structure (H2/H3)",
+  open_graph: "Open Graph tags",
+  twitter_card: "Twitter card",
+  viewport_meta: "Mobile viewport",
+  html_lang: "Language attribute",
+  robots_meta: "Robots meta directive",
+  internal_links: "Internal links",
+  favicon: "Favicon",
+  hreflang: "hreflang annotations",
 };
 
 export function factorLabel(id: string): string {

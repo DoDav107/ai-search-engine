@@ -1,3 +1,7 @@
+# Per-factor weights for the SEO score: weighted average of pass=1/warn=0.5/fail=0,
+# normalised to 0–100 in scoring.score_page. The total is SELF-NORMALISING (score divides
+# by the sum of weights present), so adding factors never breaks the 0–100 scale; weights
+# only set RELATIVE importance. Keep this config-driven and client-agnostic.
 title: 1.0
 meta_description: 1.0
 h1: 1.0
@@ -5,3 +9,19 @@ canonical: 1.0
 image_alt: 1.0
 word_count: 1.0
 structured_data: 1.0
+crawl_access: 3.0
+audit_coverage: 2.0
+https_enabled: 1.0
+domain_brand_signal: 1.0
+canonical_url_shape: 1.0
+# Additional on-page factors (added 2026-06). Critical signals (responsiveness,
+# indexability, structure, internal linking) ~1.0; nice-to-haves (social/locale/favicon) lower.
+heading_structure: 1.0
+open_graph: 1.0
+twitter_card: 0.5
+viewport_meta: 1.0
+html_lang: 0.5
+robots_meta: 1.0
+internal_links: 1.0
+favicon: 0.25
+hreflang: 0.25

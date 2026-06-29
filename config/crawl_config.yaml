@@ -1,5 +1,5 @@
 site:
-  name: "Bobobaba"
+  name: "Nike"
   base_url: "https://www.nike.com"
   seed_urls: ["/"]
 
@@ -7,7 +7,7 @@ crawl:
   max_pages: 15
   max_depth: 1
   delay_seconds: 1.0
-  user_agent: "BobobabaSEOBot/0.1"
+  user_agent: "NikeSEOBot/0.1"
   respect_robots_txt: true
   timeout_seconds: 10
 
@@ -19,3 +19,14 @@ factors:
   - image_alt
   - word_count
   - structured_data
+  # Additional on-page factors (config-driven; weights in scoring_weights.yaml).
+  # All are extracted from the crawled HTML (BeautifulSoup) — no paid SEO data.
+  - heading_structure   # H2/H3 hierarchy beyond H1
+  - open_graph          # og:title / og:description / og:image
+  - twitter_card        # twitter:card
+  - viewport_meta       # mobile responsive viewport
+  - html_lang           # <html lang>
+  - robots_meta         # noindex / nofollow detection
+  - internal_links      # internal link presence/count
+  - favicon             # favicon link
+  - hreflang            # hreflang alternates (multi-locale; informational)

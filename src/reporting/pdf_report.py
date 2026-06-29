@@ -52,6 +52,15 @@ _FACTOR_LABEL = {
     "https_enabled": "HTTPS",
     "domain_brand_signal": "Brand/domain signal",
     "canonical_url_shape": "Canonical URL shape",
+    "heading_structure": "Heading structure (H2/H3)",
+    "open_graph": "Open Graph tags",
+    "twitter_card": "Twitter card",
+    "viewport_meta": "Mobile viewport",
+    "html_lang": "Language attribute",
+    "robots_meta": "Robots meta directive",
+    "internal_links": "Internal links",
+    "favicon": "Favicon",
+    "hreflang": "hreflang annotations",
 }
 
 
@@ -259,6 +268,12 @@ def _trend_section(trends: dict | None) -> str:
         )
     else:
         change_note = ""
+    # Factor-set continuity note (same low-confidence treatment as the same-day guard).
+    if bool(last.get("factor_set_shift")):
+        change_note += (
+            '<div class="noise-note">⚠️ These two runs were scored with different SEO factor '
+            'sets — the SEO/Unified change reflects added checks, not a real site change.</div>'
+        )
     band_note = (
         f'<div class="muted small">Shaded bands mark runs &lt; {threshold:.0f}h apart (same-day) — '
         'treat those segments as low-confidence, not a trend.</div>'
@@ -452,6 +467,9 @@ def render_html(report: dict, generated: str, logo_data_uri: str | None = None,
         _page_row(p) for p in sorted(scored_pages, key=lambda p: float(p.get("score") or 0.0))
     )
     seo_color, seo_band = _band(seo_score)
+    # AI-generated SEO assessment — same card treatment as the GEO assessment.
+    seo_assessment = (report.get("seo_assessment") or "").strip()
+    seo_assessment_html = f'<div class="callout">{_e(seo_assessment)}</div>' if seo_assessment else ""
     seo_section = f"""
     <section class="page">
         <h2>SEO Breakdown</h2>
@@ -459,6 +477,7 @@ def render_html(report: dict, generated: str, logo_data_uri: str | None = None,
             <div class="stat"><div class="stat-val" style="color:{seo_color}">{seo_score:.1f}%</div><div class="stat-lbl">Site score · {seo_band}</div></div>
             <div class="stat"><div class="stat-val">{len(scored_pages)}</div><div class="stat-lbl">Pages crawled &amp; scored</div></div>
         </div>
+        {seo_assessment_html}
         <h3>Issues by on-page factor</h3>
         <table>
             <thead><tr><th>Factor</th><th class="num">Pass</th><th class="num">Warn</th><th class="num">Fail</th></tr></thead>

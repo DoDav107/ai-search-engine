@@ -9,7 +9,6 @@ import {
 import {
   Bar,
   BarChart,
-  Cell,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -110,7 +109,9 @@ function PageRow({ page }: { page: PageReport }) {
           >
             <ul className="space-y-2 px-4 pb-4 pt-1">
               {page.factors.length === 0 && (
-                <li className="text-sm text-muted-foreground">No factor data for this page.</li>
+                <li className="text-sm text-muted-foreground">
+                  This page was crawled but was not scoreable.
+                </li>
               )}
               {page.factors.map((f: FactorResult) => (
                 <li
@@ -135,7 +136,8 @@ function PageRow({ page }: { page: PageReport }) {
 type SortKey = "score" | "url";
 
 export function SeoSection({ report }: { report: Report }) {
-  const pages = report.seo_report?.pages ?? [];
+  const pages = useMemo(() => report.seo_report?.pages ?? [], [report.seo_report?.pages]);
+  const scoredPages = useMemo(() => pages.filter((page) => page.factors.length > 0), [pages]);
   const [sortKey, setSortKey] = useState<SortKey>("score");
   const [asc, setAsc] = useState(true); // score ascending = worst pages first (actionable)
 
@@ -149,7 +151,7 @@ export function SeoSection({ report }: { report: Report }) {
 
   const factorData = useMemo(() => {
     const map = new Map<string, { factor: string; fail: number; warn: number }>();
-    for (const p of pages) {
+    for (const p of scoredPages) {
       for (const f of p.factors) {
         if (f.status !== "fail" && f.status !== "warn") continue;
         const e = map.get(f.id) ?? { factor: factorLabel(f.id), fail: 0, warn: 0 };
@@ -159,7 +161,7 @@ export function SeoSection({ report }: { report: Report }) {
       }
     }
     return [...map.values()].sort((a, b) => b.fail + b.warn - (a.fail + a.warn));
-  }, [pages]);
+  }, [scoredPages]);
 
   function toggleSort(key: SortKey) {
     if (key === sortKey) setAsc((v) => !v);
@@ -172,8 +174,30 @@ export function SeoSection({ report }: { report: Report }) {
   return (
     <Section
       title="SEO Breakdown"
-      subtitle={`${pages.length} pages crawled · site score ${(report.seo_report?.score ?? report.seo_score ?? 0).toFixed(1)}%`}
+      subtitle={`${scoredPages.length} pages scored · ${pages.length} pages crawled · site score ${(report.seo_report?.score ?? report.seo_score ?? 0).toFixed(1)}%`}
     >
+      {pages.length === 0 && (
+        <motion.div variants={sectionItem} className={`${GLASS} mb-6 p-5 text-sm text-muted-foreground sm:p-6`}>
+          No SEO page data is stored in this report yet. Run a new audit from the dashboard.
+        </motion.div>
+      )}
+      {report.seo_assessment && (
+        <motion.div variants={sectionItem} className={`${GLASS} mb-6 p-5 sm:p-6`}>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Assessment
+          </p>
+          <p className="mt-2 text-sm leading-relaxed text-foreground/85">
+            {report.seo_assessment}
+          </p>
+        </motion.div>
+      )}
+      {pages.length > 0 && scoredPages.length === 0 && (
+        <motion.div variants={sectionItem} className={`${GLASS} mb-6 p-5 sm:p-6`}>
+          <p className="text-sm text-muted-foreground">
+            The audit ran, but no scoreable SEO pages were returned for this site.
+          </p>
+        </motion.div>
+      )}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
         {/* Factor summary chart */}
         <motion.div variants={sectionItem} className={`${GLASS} p-5 sm:p-6`}>
@@ -183,7 +207,9 @@ export function SeoSection({ report }: { report: Report }) {
           <div className="mt-4 h-[300px] w-full">
             {factorData.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                No failing or warning factors — every page passes. 🎯
+                {scoredPages.length === 0
+                  ? "No scored pages yet."
+                  : "No failing or warning factors — every scored page passes."}
               </p>
             ) : (
               <ResponsiveContainer width="100%" height="100%">

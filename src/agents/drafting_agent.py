@@ -159,6 +159,31 @@ class DraftingMockEngineClient(MockEngineClient):
             '  "description": "[one sentence from the page]"\n'
             "}}"
         ),
+        "crawl_access": (
+            "[Mock] Crawl access fix:\n"
+            "Allow legitimate SEO audit crawlers to receive the same public HTML that users and search engines "
+            "should see, then rerun the audit against the canonical page URL."
+        ),
+        "audit_coverage": (
+            "[Mock] Full audit coverage fix:\n"
+            "Make the page's public HTML crawlable so title, meta description, H1, copy depth, image ALT, "
+            "canonical, and structured data checks can run on the real page."
+        ),
+        "https_enabled": (
+            "[Mock] HTTPS fix:\n"
+            "Redirect the audited URL to its HTTPS canonical version and update internal links, sitemap URLs, "
+            "canonicals, and redirects to use HTTPS consistently."
+        ),
+        "domain_brand_signal": (
+            "[Mock] Brand/domain signal fix:\n"
+            "If the domain does not contain the brand, reinforce the brand in crawlable title tags, schema, "
+            "H1 copy, organization markup, and internal linking."
+        ),
+        "canonical_url_shape": (
+            "[Mock] Canonical URL fix:\n"
+            "Audit the clean canonical URL without tracking query strings or fragments, and publish a matching "
+            "<link rel=\"canonical\"> tag in the page head."
+        ),
     }
 
     def query(self, prompt: str) -> str:
@@ -220,6 +245,54 @@ _FACTOR_TASK: dict[str, str] = {
     "structured_data": (
         "Write a complete JSON-LD structured data block appropriate for this page type, "
         "ready to paste inside a <script type='application/ld+json'> tag."
+    ),
+    "crawl_access": (
+        "Describe the crawler/access issue and provide concrete checks for robots rules, CDN bot protection, "
+        "firewall allowlists, canonical URL choice, and public HTML accessibility."
+    ),
+    "audit_coverage": (
+        "Explain that the audit is in fallback mode and list the page HTML checks that require crawlable HTML."
+    ),
+    "https_enabled": (
+        "Provide HTTPS remediation steps covering redirects, canonicals, sitemap URLs, and internal links."
+    ),
+    "domain_brand_signal": (
+        "Provide brand/domain alignment recommendations for title tags, schema, H1 copy, and visible brand signals."
+    ),
+    "canonical_url_shape": (
+        "Provide canonical URL cleanup steps covering query strings, fragments, redirects, and canonical tags."
+    ),
+    "heading_structure": (
+        "Propose an ordered H2/H3 outline for this page: 3–6 H2 section headings with optional H3 sub-points. "
+        "Return one heading per line, prefixed H2:/H3:."
+    ),
+    "open_graph": (
+        "Write the Open Graph meta tags for this page: og:title, og:description, og:image, og:type, og:url. "
+        "Return the <meta> tags only."
+    ),
+    "twitter_card": (
+        "Write the Twitter card meta tags (twitter:card=summary_large_image, twitter:title, twitter:description, "
+        "twitter:image). Return the <meta> tags only."
+    ),
+    "viewport_meta": (
+        "Provide the responsive viewport meta tag and where to place it in the <head>."
+    ),
+    "html_lang": (
+        "State the correct <html lang> value for this page and the exact attribute to add."
+    ),
+    "robots_meta": (
+        "Explain how to remove the noindex/nofollow directive (or confirm the page should stay excluded) and "
+        "the corrected robots meta tag."
+    ),
+    "internal_links": (
+        "Suggest 3–5 internal links to add on this page (anchor text + target topic) to related pages."
+    ),
+    "favicon": (
+        "Provide the favicon <link> tags to add to the <head> (icon + apple-touch-icon)."
+    ),
+    "hreflang": (
+        "Explain whether hreflang is needed for this site and, if so, the alternate <link rel=\"alternate\" "
+        "hreflang> tags to add."
     ),
 }
 
@@ -300,6 +373,76 @@ _FALLBACK_DRAFT: dict[str, str] = {
         '  "description": "[one sentence from the page]"\n'
         "}"
     ),
+    "crawl_access": (
+        "Crawl access checklist:\n"
+        "1. Confirm the canonical URL returns public HTML with HTTP 200 to normal browser and crawler user agents.\n"
+        "2. Review CDN/WAF bot rules so legitimate audit and search crawlers are not served a security block.\n"
+        "3. Rerun the audit after the page is crawlable so title, meta, headings, links, images, and schema can be scored."
+    ),
+    "audit_coverage": (
+        "Fallback audit checklist:\n"
+        "1. Make the canonical page return public HTML to the audit crawler.\n"
+        "2. Rerun the audit to unlock title, meta description, H1, image ALT, word count, and JSON-LD checks.\n"
+        "3. Keep this fallback result as an access warning, not a replacement for a full on-page crawl."
+    ),
+    "https_enabled": (
+        "HTTPS checklist:\n"
+        "1. Serve the canonical URL over HTTPS.\n"
+        "2. 301 redirect HTTP to HTTPS.\n"
+        "3. Update sitemap, internal links, canonical tags, and hreflang URLs to HTTPS."
+    ),
+    "domain_brand_signal": (
+        "Brand signal checklist:\n"
+        "1. Put the exact brand name in the title tag and Organization/WebSite schema.\n"
+        "2. Use a clear branded H1 or visible brand mention on the page.\n"
+        "3. Link from brand-owned profiles and pages to this canonical URL."
+    ),
+    "canonical_url_shape": (
+        "Canonical URL checklist:\n"
+        "1. Audit the clean canonical URL without tracking query strings or fragments.\n"
+        "2. 301 redirect duplicate variants to the canonical URL where appropriate.\n"
+        "3. Add a matching <link rel=\"canonical\"> tag in the page head."
+    ),
+    "heading_structure": (
+        "Suggested outline:\n"
+        "H2: [Primary section topic]\n"
+        "H3: [Supporting point]\n"
+        "H2: [Second section topic]\n"
+        "Keep one H1, then ordered H2s with H3s nested beneath them."
+    ),
+    "open_graph": (
+        '<meta property="og:title" content="[page title]">\n'
+        '<meta property="og:description" content="[50–160 char summary]">\n'
+        '<meta property="og:image" content="[absolute image URL]">\n'
+        '<meta property="og:type" content="website">\n'
+        '<meta property="og:url" content="[this page\'s absolute URL]">'
+    ),
+    "twitter_card": (
+        '<meta name="twitter:card" content="summary_large_image">\n'
+        '<meta name="twitter:title" content="[page title]">\n'
+        '<meta name="twitter:description" content="[50–160 char summary]">\n'
+        '<meta name="twitter:image" content="[absolute image URL]">'
+    ),
+    "viewport_meta": '<meta name="viewport" content="width=device-width, initial-scale=1">',
+    "html_lang": 'Set the document language on the root element, e.g. <html lang="en">.',
+    "robots_meta": (
+        "If the page should be discoverable, remove any noindex/nofollow and use:\n"
+        '<meta name="robots" content="index, follow">'
+    ),
+    "internal_links": (
+        "Add contextual internal links, e.g.:\n"
+        '<a href="/related-page">Descriptive anchor text</a>\n'
+        "Link to 3–5 related pages from the body copy and navigation."
+    ),
+    "favicon": (
+        '<link rel="icon" href="/favicon.ico" sizes="any">\n'
+        '<link rel="apple-touch-icon" href="/apple-touch-icon.png">'
+    ),
+    "hreflang": (
+        "Only if the site serves multiple languages/regions:\n"
+        '<link rel="alternate" hreflang="en" href="https://example.com/en/">\n'
+        '<link rel="alternate" hreflang="x-default" href="https://example.com/">'
+    ),
 }
 
 
@@ -321,6 +464,20 @@ _FACTOR_LABEL: dict[str, str] = {
     "image_alt": "Image ALT text",
     "word_count": "Content depth",
     "structured_data": "Structured data (JSON-LD)",
+    "crawl_access": "Crawl access",
+    "audit_coverage": "Audit coverage",
+    "https_enabled": "HTTPS",
+    "domain_brand_signal": "Brand/domain signal",
+    "canonical_url_shape": "Canonical URL shape",
+    "heading_structure": "Heading structure (H2/H3)",
+    "open_graph": "Open Graph tags",
+    "twitter_card": "Twitter card",
+    "viewport_meta": "Mobile viewport",
+    "html_lang": "Language attribute",
+    "robots_meta": "Robots meta directive",
+    "internal_links": "Internal links",
+    "favicon": "Favicon",
+    "hreflang": "hreflang annotations",
 }
 
 # Concrete SEO consequences per factor — used as grounded fallback for why_it_matters.
@@ -352,6 +509,64 @@ _FACTOR_WHY: dict[str, str] = {
     "structured_data": (
         "Structured data (JSON-LD) helps engines understand the page's entities and can unlock rich results. "
         "Without it the page misses enhanced SERP features and entity clarity."
+    ),
+    "crawl_access": (
+        "Search engines and SEO tools need crawlable public HTML to inspect metadata, headings, links, images, "
+        "schema, and content. A blocked response prevents normal on-page SEO auditing and can indicate an "
+        "indexing risk if search crawlers receive the same treatment."
+    ),
+    "audit_coverage": (
+        "A fallback audit can catch URL and brand hygiene issues, but it cannot verify the actual on-page SEO "
+        "signals that search engines use, including title tags, meta descriptions, headings, copy depth, "
+        "image ALT text, and structured data."
+    ),
+    "https_enabled": (
+        "HTTPS is a baseline trust and security requirement. Non-HTTPS canonical URLs can cause browser "
+        "warnings, redirect waste, analytics fragmentation, and weaker search eligibility."
+    ),
+    "domain_brand_signal": (
+        "When the brand is not obvious from the domain, search engines rely more heavily on crawlable metadata, "
+        "schema, headings, and visible copy to connect the page to the right entity."
+    ),
+    "canonical_url_shape": (
+        "Clean canonical URLs consolidate ranking signals and reduce duplicate variants. Query strings and "
+        "fragments can fragment crawl signals if they are audited or indexed as primary URLs."
+    ),
+    "heading_structure": (
+        "H2/H3 sub-headings break content into scannable, topically-labelled sections. Flat or out-of-order "
+        "headings make it harder for users, screen readers, and AI engines to parse the page's structure."
+    ),
+    "open_graph": (
+        "Open Graph tags control how the page appears when shared and are increasingly used by AI assistants "
+        "for titles, summaries, and images. Missing tags yield poor, auto-guessed previews."
+    ),
+    "twitter_card": (
+        "Twitter card tags give a controlled title/description/image when links are shared on X, improving "
+        "click-through from social. Without them the preview is unpredictable."
+    ),
+    "viewport_meta": (
+        "The viewport meta tag is required for responsive rendering. Without width=device-width the page can "
+        "display zoomed-out on phones, hurting mobile usability and mobile-first ranking."
+    ),
+    "html_lang": (
+        "The <html lang> attribute tells browsers, assistive tech, and search engines the page language, "
+        "aiding correct pronunciation, translation prompts, and locale targeting."
+    ),
+    "robots_meta": (
+        "A noindex/nofollow robots directive removes the page from search and AI indexes entirely. Left on a "
+        "page that should rank, it makes all other SEO work moot."
+    ),
+    "internal_links": (
+        "Internal links distribute authority and help crawlers (and AI) discover and relate pages. Pages with "
+        "few internal links are crawled less and rank weaker for their topics."
+    ),
+    "favicon": (
+        "A favicon is a small brand-trust signal shown in browser tabs, bookmarks, and some search results. "
+        "Its absence looks unpolished but has minimal direct ranking impact."
+    ),
+    "hreflang": (
+        "hreflang annotations map equivalent pages across languages/regions so the right version ranks per "
+        "locale. They matter only for genuinely multi-locale sites."
     ),
 }
 

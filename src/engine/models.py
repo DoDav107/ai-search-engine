@@ -125,6 +125,10 @@ class CombinedReport:
     seo_recommendations: List["AdvisoryRecommendation"] = field(default_factory=list)
     geo_recommendations: List["AdvisoryRecommendation"] = field(default_factory=list)
     geo_assessment: str = ""
+    seo_assessment: str = ""
+    # Stable id for the factor set this run was scored with — lets trends flag comparisons
+    # across different factor sets (e.g. older reports) as low-confidence, not a real delta.
+    factor_set_version: str = ""
     audit_settings: dict = field(default_factory=dict)
 
 

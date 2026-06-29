@@ -111,6 +111,11 @@ def series_for_client(client: str, override_hours: float | None = None) -> dict[
     timestamps = [ts for ts, _ in loaded]
     flags = low_confidence_flags(timestamps, threshold)
 
+    # Factor-set continuity: a run scored with a different factor set than the previous run
+    # (e.g. an older report predating new factors) must not read as a real SEO delta.
+    versions = [str((p.get("factor_set_version") or "legacy")) for _, p in loaded]
+    factor_shift = [False] + [versions[i] != versions[i - 1] for i in range(1, len(versions))]
+
     runs = [
         {
             "timestamp": ts.isoformat().replace("+00:00", "Z"),
@@ -120,6 +125,8 @@ def series_for_client(client: str, override_hours: float | None = None) -> dict[
             "brand_visibility": brand_visibility(p),
             "subject_sov": _subject_sov(p),
             "low_confidence": flags[i],  # gap to previous run < threshold
+            "factor_set_version": versions[i],
+            "factor_set_shift": factor_shift[i],  # factor set changed vs previous run
         }
         for i, (ts, p) in enumerate(loaded)
     ]

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Any
+from urllib.parse import urlparse
 
 import yaml
 from bs4 import BeautifulSoup
@@ -14,6 +16,13 @@ from .models import CrawledPage, FactorResult, PageReport
 
 def _text_length(value: str | None) -> int:
     return len(value.strip()) if value else 0
+
+
+def _fold_text(value: str) -> str:
+    folded = "".join(
+        ch for ch in unicodedata.normalize("NFKD", value) if not unicodedata.combining(ch)
+    )
+    return re.sub(r"[^a-z0-9]+", "", folded.lower())
 
 
 def title(html: Any) -> FactorResult:
@@ -176,14 +185,294 @@ def structured_data(html: Any) -> FactorResult:
     return FactorResult(id="structured_data", status=status, value=count, message=message)
 
 
+# ---------------------------------------------------------------------------
+# Additional HTML on-page factors (config-driven, weighted like the original seven).
+# All are extractable from the existing crawl (BeautifulSoup over the fetched HTML);
+# none require a paid SEO subscription.
+# ---------------------------------------------------------------------------
+def heading_structure(html: Any) -> FactorResult:
+    """Sub-heading hierarchy beyond H1 (H2/H3 presence and order)."""
+    h2 = html.find_all("h2")
+    h3 = html.find_all("h3")
+    if h2:
+        # Flag an H3 that appears before any H2 (a skipped level).
+        first_h2 = html.find("h2")
+        first_h3 = html.find("h3")
+        if first_h3 is not None and first_h2 is not None and _precedes(first_h3, first_h2):
+            return FactorResult(id="heading_structure", status="warn",
+                                value={"h2": len(h2), "h3": len(h3)},
+                                message="An H3 appears before the first H2; keep headings in order (H2 → H3).")
+        return FactorResult(id="heading_structure", status="pass",
+                            value={"h2": len(h2), "h3": len(h3)},
+                            message=f"Clear sub-heading structure ({len(h2)} H2, {len(h3)} H3).")
+    if h3:
+        return FactorResult(id="heading_structure", status="warn", value={"h2": 0, "h3": len(h3)},
+                            message="H3 headings used without any H2; add H2 sections for a clear hierarchy.")
+    return FactorResult(id="heading_structure", status="warn", value={"h2": 0, "h3": 0},
+                        message="No H2/H3 sub-headings; structure the content with descriptive sub-headings.")
+
+
+def open_graph(html: Any) -> FactorResult:
+    """Open Graph tags (og:title / og:description / og:image) for rich social/AI previews."""
+    present = [
+        p for p in ("og:title", "og:description", "og:image")
+        if html.find("meta", attrs={"property": p}) and
+        (html.find("meta", attrs={"property": p}).get("content") or "").strip()
+    ]
+    if len(present) == 3:
+        status, message = "pass", "Open Graph title, description and image are all present."
+    elif present:
+        status = "warn"
+        message = f"Partial Open Graph tags ({', '.join(present)}); add the rest for richer previews."
+    else:
+        status, message = "fail", "No Open Graph tags; add og:title, og:description and og:image."
+    return FactorResult(id="open_graph", status=status, value={"present": present}, message=message)
+
+
+def twitter_card(html: Any) -> FactorResult:
+    """Twitter card tags (twitter:card) for X/Twitter link previews."""
+    tag = html.find("meta", attrs={"name": "twitter:card"})
+    value = (tag.get("content") or "").strip() if tag else ""
+    if value:
+        return FactorResult(id="twitter_card", status="pass", value=value,
+                            message="Twitter card metadata is present.")
+    return FactorResult(id="twitter_card", status="warn", value=None,
+                        message="No twitter:card tag; add Twitter card metadata for better link previews.")
+
+
+def viewport_meta(html: Any) -> FactorResult:
+    """Mobile viewport meta tag (responsive readiness)."""
+    tag = html.find("meta", attrs={"name": "viewport"})
+    content = (tag.get("content") or "").strip().lower() if tag else ""
+    if "width=device-width" in content:
+        return FactorResult(id="viewport_meta", status="pass", value=content,
+                            message="Responsive viewport meta tag is present.")
+    if content:
+        return FactorResult(id="viewport_meta", status="warn", value=content,
+                            message="Viewport tag present but not set to width=device-width for responsiveness.")
+    return FactorResult(id="viewport_meta", status="fail", value=None,
+                        message="No viewport meta tag; add one so the page renders well on mobile.")
+
+
+def html_lang(html: Any) -> FactorResult:
+    """`lang` attribute on <html> (accessibility + locale signal)."""
+    tag = html.find("html")
+    lang = (tag.get("lang") or "").strip() if tag else ""
+    if lang:
+        return FactorResult(id="html_lang", status="pass", value=lang,
+                            message=f"Document language is declared (lang=\"{lang}\").")
+    return FactorResult(id="html_lang", status="warn", value=None,
+                        message="No lang attribute on <html>; declare the page language (e.g. lang=\"en\").")
+
+
+def robots_meta(html: Any) -> FactorResult:
+    """Robots meta directives — detect noindex/nofollow that block search/AI visibility."""
+    tag = html.find("meta", attrs={"name": re.compile(r"^robots$", re.I)})
+    content = (tag.get("content") or "").lower() if tag else ""
+    if "noindex" in content:
+        return FactorResult(id="robots_meta", status="fail", value=content,
+                            message="Page is set to noindex; search engines/AI are told not to index it.")
+    if "nofollow" in content:
+        return FactorResult(id="robots_meta", status="warn", value=content,
+                            message="Robots meta uses nofollow; links on this page won't pass authority.")
+    return FactorResult(id="robots_meta", status="pass", value=content or "index,follow",
+                        message="No restrictive robots meta directive (page is indexable).")
+
+
+def internal_links(html: Any) -> FactorResult:
+    """Internal-link presence/count (relative or in-page links) for crawl depth."""
+    count = 0
+    for a in html.find_all("a", href=True):
+        href = (a.get("href") or "").strip()
+        if not href or href.startswith(("#", "mailto:", "tel:", "javascript:")):
+            continue
+        parsed = urlparse(href)
+        if not parsed.scheme and not href.startswith("//"):  # relative → internal
+            count += 1
+    if count >= 3:
+        status, message = "pass", f"{count} internal links found, supporting site crawlability."
+    elif count >= 1:
+        status, message = "warn", f"Only {count} internal link(s); add more to connect related pages."
+    else:
+        status, message = "fail", "No internal links found; add navigation/contextual links between pages."
+    return FactorResult(id="internal_links", status=status, value=count, message=message)
+
+
+def favicon(html: Any) -> FactorResult:
+    """Favicon link (brand polish in tabs and search results)."""
+    tag = html.find("link", rel=lambda v: bool(v) and "icon" in (" ".join(v) if isinstance(v, list) else str(v)).lower())
+    if tag and (tag.get("href") or "").strip():
+        return FactorResult(id="favicon", status="pass", value=tag.get("href"),
+                            message="A favicon is declared.")
+    return FactorResult(id="favicon", status="warn", value=None,
+                        message="No favicon link; add one for brand recognition in tabs and SERPs.")
+
+
+def hreflang(html: Any) -> FactorResult:
+    """hreflang alternate links (only relevant for multi-locale sites; informational)."""
+    tags = html.find_all("link", rel=lambda v: bool(v) and "alternate" in (" ".join(v) if isinstance(v, list) else str(v)).lower())
+    langs = [t for t in tags if (t.get("hreflang") or "").strip()]
+    if langs:
+        return FactorResult(id="hreflang", status="pass", value=len(langs),
+                            message=f"{len(langs)} hreflang alternate(s) declared for international targeting.")
+    return FactorResult(id="hreflang", status="warn", value=0,
+                        message="No hreflang tags; add them only if the site serves multiple languages/regions.")
+
+
+def _precedes(a: Any, b: Any) -> bool:
+    """True if element ``a`` appears before ``b`` in document order."""
+    for el in a.find_all_next():
+        if el is b:
+            return True
+    return False
+
+
+def factor_set_version(report) -> str:
+    """Stable short id for the set of factor ids actually scored across a report.
+
+    Lets trends detect when a report was scored with a DIFFERENT factor set (e.g. older
+    reports predating new factors) and flag the comparison as low-confidence rather than a
+    real delta. Derived from the data, so it changes automatically when factors are added.
+    """
+    import hashlib
+
+    ids: set[str] = set()
+    for page in getattr(report, "pages", []) or []:
+        for f in getattr(page, "factors", []) or []:
+            fid = getattr(f, "id", None)
+            if fid:
+                ids.add(str(fid))
+    if not ids:
+        return ""
+    digest = hashlib.sha1(",".join(sorted(ids)).encode("utf-8")).hexdigest()[:8]
+    return f"{len(ids)}-{digest}"
+
+
 def _parse_html(html: str) -> Any:
     return BeautifulSoup(html, "lxml")
+
+
+def crawl_access(page: CrawledPage) -> FactorResult:
+    """Create an SEO factor for pages that could not be fetched as public HTML."""
+    status = page.status_code if page.status_code is not None else "no response"
+    error = page.error or f"HTTP {status}"
+    return FactorResult(
+        id="crawl_access",
+        status="fail",
+        value={"status_code": page.status_code, "error": error},
+        message=(
+            f"The page could not be audited for on-page SEO because the crawler received {status}. "
+            "Make the public HTML accessible to legitimate crawlers or test a crawlable page path."
+        ),
+    )
+
+
+def audit_coverage(page: CrawledPage) -> FactorResult:
+    """Explain that this page is using limited URL/domain SEO checks."""
+    return FactorResult(
+        id="audit_coverage",
+        status="warn",
+        value={"mode": "fallback", "status_code": page.status_code},
+        message=(
+            "Fallback SEO audit used because page HTML was unavailable. URL/domain checks are shown, "
+            "but title, meta description, H1, image ALT, word count, and schema still need crawlable HTML."
+        ),
+    )
+
+
+def https_enabled(page: CrawledPage) -> FactorResult:
+    parsed = urlparse(page.url)
+    if parsed.scheme.lower() == "https":
+        return FactorResult(
+            id="https_enabled",
+            status="pass",
+            value={"scheme": parsed.scheme},
+            message="The audited URL uses HTTPS.",
+        )
+    return FactorResult(
+        id="https_enabled",
+        status="fail",
+        value={"scheme": parsed.scheme or None},
+        message="The audited URL is not HTTPS; use HTTPS for crawlability, trust, and modern search requirements.",
+    )
+
+
+def domain_brand_signal(page: CrawledPage, config: dict[str, Any]) -> FactorResult:
+    brand = str(config.get("site", {}).get("name", "")).strip()
+    host = urlparse(page.url).netloc.lower().removeprefix("www.")
+    brand_key = _fold_text(brand)
+    host_key = _fold_text(host.split(":")[0])
+
+    if not brand_key:
+        return FactorResult(
+            id="domain_brand_signal",
+            status="warn",
+            value={"brand": brand, "host": host},
+            message="No brand name was configured, so brand/domain alignment could not be verified.",
+        )
+    if brand_key in host_key:
+        return FactorResult(
+            id="domain_brand_signal",
+            status="pass",
+            value={"brand": brand, "host": host},
+            message="The configured brand is clearly reflected in the audited domain.",
+        )
+
+    return FactorResult(
+        id="domain_brand_signal",
+        status="warn",
+        value={"brand": brand, "host": host},
+        message=(
+            "The configured brand is not obvious in the audited domain. If this is a parent, regional, "
+            "or product URL, reinforce the brand with crawlable title tags, schema, and on-page copy."
+        ),
+    )
+
+
+def canonical_url_shape(page: CrawledPage) -> FactorResult:
+    parsed = urlparse(page.url)
+    issues: list[str] = []
+    if not parsed.scheme or not parsed.netloc:
+        issues.append("missing scheme or host")
+    if parsed.query:
+        issues.append("query string present")
+    if parsed.fragment:
+        issues.append("fragment present")
+
+    if not parsed.scheme or not parsed.netloc:
+        status = "fail"
+        message = "The audited URL is not a complete absolute URL; use a clean canonical HTTPS URL."
+    elif issues:
+        status = "warn"
+        message = f"The audited URL is usable but not clean canonical shape ({', '.join(issues)})."
+    else:
+        status = "pass"
+        message = "The audited URL is a clean absolute URL without query strings or fragments."
+
+    return FactorResult(
+        id="canonical_url_shape",
+        status=status,
+        value={"scheme": parsed.scheme, "host": parsed.netloc, "path": parsed.path, "issues": issues},
+        message=message,
+    )
+
+
+def fallback_page_factors(page: CrawledPage, config: dict[str, Any]) -> list[FactorResult]:
+    """Limited but useful SEO factors when page HTML cannot be audited."""
+    return [
+        crawl_access(page),
+        audit_coverage(page),
+        https_enabled(page),
+        domain_brand_signal(page, config),
+        canonical_url_shape(page),
+    ]
 
 
 def extract_page(page: CrawledPage, config: dict[str, Any]) -> PageReport:
     """Create a PageReport by running configured SEO factor extractors."""
     if page.status_code != 200 or not page.html:
-        return PageReport(url=page.url, factors=[], score=0.0)
+        error = page.error or (f"HTTP {page.status_code}" if page.status_code else "No HTML returned")
+        return PageReport(url=page.url, factors=fallback_page_factors(page, config), score=0.0, error=error)
 
     soup = _parse_html(page.html)
     factor_names = config.get("factors", [])
@@ -195,6 +484,16 @@ def extract_page(page: CrawledPage, config: dict[str, Any]) -> PageReport:
         "image_alt": image_alt,
         "word_count": word_count,
         "structured_data": structured_data,
+        # Additional on-page factors (config-driven; added 2026-06).
+        "heading_structure": heading_structure,
+        "open_graph": open_graph,
+        "twitter_card": twitter_card,
+        "viewport_meta": viewport_meta,
+        "html_lang": html_lang,
+        "robots_meta": robots_meta,
+        "internal_links": internal_links,
+        "favicon": favicon,
+        "hreflang": hreflang,
     }
 
     factors: list[FactorResult] = []

@@ -7,10 +7,11 @@ visibility assessment. It must not invent facts about the brand or its offerings
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import Any
 
-from .drafting_agent import parse_json_object
-from ..engine.models import AdvisoryRecommendation, GeoReport
+from .drafting_agent import _FACTOR_LABEL, parse_json_object
+from ..engine.models import AdvisoryRecommendation, GeoReport, SiteReport
 
 _ALLOWED_PRIORITY = {"High", "Medium", "Low"}
 
@@ -254,6 +255,102 @@ def _coerce(raw: Any, brand: str, visibility: float) -> list[AdvisoryRecommendat
                 )
             )
     return recs if recs else _fallback_recs(brand, visibility)
+
+
+def _seo_facts(site_report: SiteReport) -> dict[str, Any]:
+    """Aggregate ONLY real crawl/factor figures for a grounded SEO assessment."""
+    pages = [p for p in (site_report.pages or []) if p.factors]
+    status_counts = Counter()
+    fail_factors = Counter()
+    warn_factors = Counter()
+    for p in pages:
+        for f in p.factors:
+            status_counts[f.status] += 1
+            if f.status == "fail":
+                fail_factors[f.id] += 1
+            elif f.status == "warn":
+                warn_factors[f.id] += 1
+    scores = [p.score for p in pages]
+    def _label(fid: str) -> str:
+        return _FACTOR_LABEL.get(fid, fid.replace("_", " "))
+    return {
+        "site_score": site_report.score,
+        "pages_scored": len(pages),
+        "passes": status_counts.get("pass", 0),
+        "warns": status_counts.get("warn", 0),
+        "fails": status_counts.get("fail", 0),
+        "min_score": round(min(scores), 1) if scores else None,
+        "max_score": round(max(scores), 1) if scores else None,
+        "top_failing": [(_label(fid), n) for fid, n in fail_factors.most_common(5)],
+        "top_warning": [(_label(fid), n) for fid, n in warn_factors.most_common(5)],
+    }
+
+
+def _seo_fallback_assessment(f: dict[str, Any]) -> str:
+    """Deterministic SEO assessment from the real figures (used for mock / no-LLM runs)."""
+    if not f["pages_scored"]:
+        return "No pages could be crawled and scored, so an SEO assessment cannot be produced yet."
+    parts = [
+        f"Across {f['pages_scored']} crawled page(s) the site scores {f['site_score']:.1f}% on SEO "
+        f"({f['passes']} factor checks passed, {f['warns']} warnings, {f['fails']} failures)."
+    ]
+    if f["min_score"] is not None and f["max_score"] is not None and f["max_score"] != f["min_score"]:
+        parts.append(f"Per-page scores range from {f['min_score']:.1f}% to {f['max_score']:.1f}%.")
+    weak = f["top_failing"] or f["top_warning"]
+    if weak:
+        named = ", ".join(f"{label} ({n})" for label, n in weak[:3])
+        parts.append(f"The most common issues are: {named}.")
+    else:
+        parts.append("No failing or warning factors were detected on the scored pages.")
+    return " ".join(parts)
+
+
+def _build_seo_prompt(f: dict[str, Any]) -> str:
+    failing = "; ".join(f"{label}: {n} page(s)" for label, n in f["top_failing"]) or "none"
+    warning = "; ".join(f"{label}: {n} page(s)" for label, n in f["top_warning"]) or "none"
+    return (
+        "You are an SEO analyst. Write a 2–4 sentence assessment of this site's on-page SEO, "
+        "for a client report. Use ONLY the figures provided below — do NOT invent metrics, page "
+        "content, rankings, or traffic. If the data is thin, say less. Plain prose, no headings.\n\n"
+        f"SEO site score: {f['site_score']:.1f}% (0–100)\n"
+        f"Pages crawled and scored: {f['pages_scored']}\n"
+        f"Factor checks — passed: {f['passes']}, warnings: {f['warns']}, failures: {f['fails']}\n"
+        f"Per-page score range: {f['min_score']}–{f['max_score']}\n"
+        f"Most common failing factors: {failing}\n"
+        f"Most common warning factors: {warning}\n"
+    )
+
+
+def build_seo_assessment(
+    site_report: SiteReport,
+    config: dict[str, Any],
+) -> str:
+    """Narrative SEO assessment mirroring the GEO one — SAME provider/model path.
+
+    Grounded strictly in crawl/factor figures (scores, pass/warn/fail counts, per-page
+    score range, the specific failing factors). Makes no claim unsupported by the crawl.
+    Falls back to a deterministic, figure-based summary for mock/no-LLM runs.
+    """
+    facts = _seo_facts(site_report)
+    engine = str(config.get("engine", "mock")).lower()
+    mode = str(config.get("openai", {}).get("mode", "live")).lower()
+
+    if mode == "live" and engine != "mock" and facts["pages_scored"]:
+        from src.clients import openai_client as _oc
+        openai_cfg = config.get("openai", {})
+        try:
+            text = _oc.client.chat(
+                _build_seo_prompt(facts),
+                max_completion_tokens=int(openai_cfg.get("advisory_max_completion_tokens", 3500)),
+                reasoning_effort=openai_cfg.get("reasoning_effort") or None,
+                timeout=float(openai_cfg.get("advisory_timeout", 120)),
+            )
+            text = (text or "").strip()
+            if text:
+                return text
+        except Exception:
+            pass
+    return _seo_fallback_assessment(facts)
 
 
 def build_geo_recommendations(

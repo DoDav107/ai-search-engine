@@ -278,6 +278,110 @@ def _trend_section(trends: dict | None) -> str:
 
 
 # ---------------------------------------------------------------------------
+def _key_label(src: str) -> str:
+    """API-key mode label — mirrors the dashboards."""
+    return {"env": "saved", "temporary": "temporary", "none": "none"}.get(src, src or "none")
+
+
+def _engine_breakdown_html(engine_scores: list[dict]) -> str:
+    """AI Engine / Model GEO Breakdown table + headline note (parity with both dashboards).
+
+    Returns "" when there are no engine scores (older reports omit cleanly).
+    """
+    if not engine_scores:
+        return ""
+    rows = []
+    for e in sorted(engine_scores, key=lambda x: (x.get("provider", ""), x.get("model", ""))):
+        grounding = "🌐 Live search" if e.get("web_grounded") else "⚠ Model knowledge"
+        rows.append(
+            f"""<tr>
+                <td>{_e(e.get('provider', ''))}</td>
+                <td>{_e(e.get('model', ''))}</td>
+                <td>{grounding}</td>
+                <td class="num">{int(e.get('sources_count') or 0)}</td>
+                <td class="num">{float(e.get('geo_score') or 0.0):.1f}%</td>
+                <td class="num">{round((e.get('visibility_rate') or 0.0) * 100, 1):.1f}%</td>
+                <td class="num">{int(e.get('queries_run') or 0)}</td>
+                <td class="ctr">{_e(_key_label(e.get('api_key_source', 'none')))}</td>
+            </tr>"""
+        )
+    grounded = [e for e in engine_scores if not e.get("error") and e.get("queries_run") and e.get("web_grounded")]
+    ungrounded = [e for e in engine_scores if not e.get("error") and e.get("queries_run") and not e.get("web_grounded")]
+    notes = [
+        f'Headline GEO score = average of {len(grounded)} live-grounded engine(s). '
+        '🌐 = live web search · ⚠ = model knowledge only.'
+    ]
+    if ungrounded:
+        names = ", ".join(f"{e.get('provider')}/{e.get('model')}" for e in ungrounded)
+        notes.append(f"Excluded from the headline (ungrounded): {names}.")
+    for e in (e for e in engine_scores if e.get("grounding_warning")):
+        notes.append(f"⚠️ {e.get('provider')}/{e.get('model')}: {e.get('grounding_warning')}")
+    for e in (e for e in engine_scores if e.get("error")):
+        notes.append(f"⚠️ {e.get('provider')}/{e.get('model')} not run: {e.get('error')}")
+    note_html = "".join(f'<div class="muted small">{_e(n)}</div>' for n in notes)
+    return f"""<h3>AI Engine / Model GEO Breakdown</h3>
+        <table>
+            <thead><tr>
+                <th>Provider</th><th>Model</th><th>Grounding</th><th class="num">Sources</th>
+                <th class="num">GEO score</th><th class="num">Visibility</th>
+                <th class="num">Queries</th><th class="ctr">API key</th>
+            </tr></thead>
+            <tbody>{''.join(rows)}</tbody>
+        </table>{note_html}"""
+
+
+def _qcard(label: str, value: str, foot: str = "") -> str:
+    foot_html = f'<div class="tfoot">{_e(foot)}</div>' if foot else ""
+    return f'<div class="tcard"><div class="tlabel">{_e(label)}</div><div class="tval">{_e(value)}</div>{foot_html}</div>'
+
+
+def _quality_signals_html(engine_scores: list[dict]) -> str:
+    """GEO Quality Signals metric grid + sentiment split, per engine (parity w/ dashboards).
+
+    Brand-mention metrics (sentiment / recommendation / rank) are over brand-mention
+    answers only → "N/A" when the brand isn't mentioned. Citation coverage and competitor
+    mentions are across all answers. Renders only blocks the report actually carries.
+    """
+    blocks = [(e, e.get("quality")) for e in engine_scores if e.get("quality")]
+    if not blocks:
+        return ""
+    multi = len(blocks) > 1
+    out = ["<h3>GEO Quality Signals</h3>"]
+    for e, q in sorted(blocks, key=lambda b: (b[0].get("provider", ""), b[0].get("model", ""))):
+        n_all = int(q.get("answers_total") or 0)
+        n_men = int(q.get("brand_mentions") or 0)
+        sent = q.get("sentiment") or {}
+        rec = q.get("recommendation") or {}
+        avg_sent = sent.get("avg")
+        avg_rec = rec.get("avg")
+        avg_rank = q.get("avg_brand_rank")
+        cite_cov = (q.get("citation_coverage") or 0.0) * 100
+
+        if multi:
+            out.append(f'<div class="muted small" style="margin-top:6px"><b>{_e(e.get("provider"))}/{_e(e.get("model"))}</b></div>')
+        out.append(
+            f'<div class="muted small">Share of Voice: <b>{(q.get("sov") or 0.0) * 100:.0f}%</b> — '
+            f'brand mentioned in {n_men} of {n_all} answers.</div>'
+        )
+        cards = [
+            _qcard("Avg sentiment", f"{avg_sent:+.2f}" if (n_men and avg_sent is not None) else "N/A", "of brand mentions"),
+            _qcard("Avg recommendation", f"{avg_rec * 100:.0f}%" if (n_men and avg_rec is not None) else "N/A", "of brand mentions"),
+            _qcard("Citation coverage", f"{cite_cov:.0f}%", f"across all {n_all} answers"),
+            _qcard("Competitor mentions", str(int(q.get("competitor_total") or 0)), f"across all {n_all} answers"),
+            _qcard("Avg brand rank", f"#{avg_rank:.1f}" if (n_men and avg_rank is not None) else "N/A", "of brand mentions"),
+        ]
+        out.append(f'<div class="trend-cards qsig">{"".join(cards)}</div>')
+        if n_men:
+            out.append(
+                f'<div class="muted small">Sentiment of {n_men} brand mention(s): '
+                f'🟢 {int(sent.get("positive", 0))} positive · ⚪ {int(sent.get("neutral", 0))} neutral · '
+                f'🔴 {int(sent.get("negative", 0))} negative.</div>'
+            )
+        else:
+            out.append(f'<div class="muted small">N/A — brand not mentioned in any of the {n_all} answers.</div>')
+    return "".join(out)
+
+
 # Full HTML document
 # ---------------------------------------------------------------------------
 def render_html(report: dict, generated: str, logo_data_uri: str | None = None,
@@ -292,6 +396,7 @@ def render_html(report: dict, generated: str, logo_data_uri: str | None = None,
     pages = seo.get("pages") or []
     scored_pages = [p for p in pages if p.get("factors")]
     geo_results = geo.get("results") or []
+    engine_scores = geo.get("engine_scores") or []
     seo_recs = report.get("seo_recommendations") or []
     geo_recs = report.get("geo_recommendations") or []
 
@@ -454,6 +559,10 @@ def render_html(report: dict, generated: str, logo_data_uri: str | None = None,
             f'{_e(brand)} highlighted.</div>{"".join(rows)}'
         )
 
+    # AI Engine / Model breakdown + GEO Quality Signals (parity with both dashboards).
+    engine_breakdown_html = _engine_breakdown_html(engine_scores)
+    quality_signals_html = _quality_signals_html(engine_scores)
+
     geo_section = f"""
     <section class="page">
         <h2>GEO Report</h2>
@@ -462,6 +571,8 @@ def render_html(report: dict, generated: str, logo_data_uri: str | None = None,
             <div class="stat"><div class="stat-val">{geo_score:.1f}%</div><div class="stat-lbl">GEO score</div></div>
         </div>
         {assessment_html}
+        {engine_breakdown_html}
+        {quality_signals_html}
         {sov_html}
         <h3>Per-query results</h3>
         <table>
@@ -621,6 +732,11 @@ table.top td { vertical-align: middle; }
 .tlabel { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7494; }
 .tval { font-size: 23px; font-weight: 800; color: #16182a; margin-top: 2px; }
 .tfoot { font-size: 10px; color: #5b6478; margin-top: 3px; }
+/* GEO Quality Signals: 5 compact metric cards across (reuses trend-card styling). */
+.trend-cards.qsig { gap: 8px; margin: 6px 0; break-inside: avoid; }
+.qsig .tcard { padding: 9px 11px; }
+.qsig .tval { font-size: 18px; }
+.qsig .tfoot { font-size: 8.5px; }
 .chart { border: 1px solid #e7e8f0; border-radius: 12px; padding: 12px; background: #fff; margin-top: 4px; }
 .trend-legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 8px; }
 .tlg { display: flex; align-items: center; gap: 6px; font-size: 10px; color: #5b6478; }

@@ -162,13 +162,18 @@ export function TrendsSection({ defaultClient }: { defaultClient?: string }) {
   }, [client]);
 
   // Filter runs to the chosen date range, keeping original indices for query alignment.
+  // INCLUSIVE on both ends, compared as real UTC timestamps (not strings): from the start
+  // date 00:00:00Z through the end date 23:59:59.999Z. This matches Streamlit's UTC
+  // ts.date() basis and avoids the end-date being treated as exclusive.
   const filtered = useMemo(() => {
     const runs = series?.runs ?? [];
+    const fromMs = from ? Date.parse(`${from}T00:00:00Z`) : Number.NEGATIVE_INFINITY;
+    const toMs = to ? Date.parse(`${to}T23:59:59.999Z`) : Number.POSITIVE_INFINITY;
     return runs
       .map((r, idx) => ({ r, idx }))
       .filter(({ r }) => {
-        const day = fmtDay(r.timestamp);
-        return (!from || day >= from) && (!to || day <= to);
+        const t = Date.parse(r.timestamp);
+        return Number.isNaN(t) ? true : t >= fromMs && t <= toMs;
       });
   }, [series, from, to]);
 
@@ -208,7 +213,9 @@ export function TrendsSection({ defaultClient }: { defaultClient?: string }) {
   }
 
   const runs = series?.runs ?? [];
-  const enough = filtered.length >= 2;
+  const inverted = !!(from && to && from > to);
+  const hasRuns = filtered.length > 0;             // ≥1 run → the chart MUST render
+  const enough = filtered.length >= 2;             // ≥2 → change-since-previous deltas
   const last = filtered.length ? filtered[filtered.length - 1].r : null;
   const prev = filtered.length >= 2 ? filtered[filtered.length - 2].r : null;
   const lastLow = !!last?.low_confidence;
@@ -237,37 +244,26 @@ export function TrendsSection({ defaultClient }: { defaultClient?: string }) {
         </motion.div>
       )}
 
-      {/* Single-run / not-enough-data state */}
-      {!enough ? (
-        <motion.div variants={sectionItem} className={`${GLASS} p-5 sm:p-6`}>
-          <p className="text-sm text-muted-foreground">
-            📊 Need ≥2 runs for trends — <span className="text-foreground">{series?.subject_name ?? client}</span>{" "}
-            has {runs.length} in range. Run another audit to compare over time.
-          </p>
-          {last && (
-            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {SERIES.map((s) => {
-                const v = last[s.key as keyof TrendRun] as number | null;
-                return (
-                  <div key={s.key} className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
-                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{s.label}</div>
-                    <div className="mt-1 font-mono text-lg tabular-nums">{v != null ? `${v.toFixed(1)}%` : "—"}</div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+      {/* Empty / inverted-range states — never a silent blank chart. */}
+      {inverted ? (
+        <motion.div variants={sectionItem} className={`${GLASS} p-5 text-sm text-muted-foreground sm:p-6`}>
+          Start date is after end date — adjust the range.
+        </motion.div>
+      ) : !hasRuns ? (
+        <motion.div variants={sectionItem} className={`${GLASS} p-5 text-sm text-muted-foreground sm:p-6`}>
+          No runs in this date range — widen the range to see saved runs.
         </motion.div>
       ) : (
         <>
           {/* Change-since-previous cards */}
           <motion.p variants={sectionItem} className="mb-3 text-xs text-muted-foreground">
-            Change since previous run{" "}
+            {enough ? "Change since previous run " : "Single run in range "}
             {prev && last && (
               <span className="font-mono">
                 {fmtLabel(prev.timestamp)} → {fmtLabel(last.timestamp)}
               </span>
             )}
+            {!enough && last && <span className="font-mono">{fmtLabel(last.timestamp)}</span>}
             {lastLow && (
               <span className="ml-2 inline-flex items-center gap-1 rounded-md border border-warning/30 bg-warning/10 px-1.5 py-0.5 text-warning">
                 <Info className="h-3 w-3" aria-hidden /> same-day — may reflect run-to-run variance

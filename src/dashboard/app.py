@@ -514,31 +514,26 @@ def _temporary_provider_key(provider: str, key: str | None):
 report_path = REPORTS_DIR / "latest_report.json"
 
 
-def _normalize_audit_url(url: str) -> str:
-    url = (url or "").strip()
-    if url and "://" not in url:
-        url = "https://" + url
-    return url
-
-
 def _validate_audit(
     client: str, brand: str, url: str, queries_raw: str
 ) -> tuple[str, str, str, list[str], list[str]]:
     """Return (client, brand, normalized_url, queries, errors). Never raises."""
-    from urllib.parse import urlparse
+    from src.engine.url_utils import normalise_site_url
 
     errors: list[str] = []
     client = (client or "").strip()
     brand = (brand or "").strip()
-    url = _normalize_audit_url(url)
+    # Shared normaliser — same clean URL as the Next.js path and the crawl entry.
+    try:
+        url = normalise_site_url(url)
+    except ValueError as exc:
+        url = (url or "").strip()
+        errors.append(str(exc))
     queries = [q.strip() for q in (queries_raw or "").splitlines() if q.strip()]
     if not client:
         errors.append("Client is required.")
     if not brand:
         errors.append("Brand / company name is required.")
-    parsed = urlparse(url)
-    if not (parsed.scheme in ("http", "https") and parsed.netloc and "." in parsed.netloc):
-        errors.append("Enter a valid website URL (e.g. https://example.com).")
     if not queries:
         errors.append("Add at least one target query (one per line).")
     if len(queries) > MAX_QUERIES:
@@ -555,7 +550,17 @@ with st.sidebar:
         )
         na_client = st.text_input("Client", key="na_client", placeholder="e.g. Acme Retail")
         na_brand = st.text_input("Brand / company name", key="na_brand", placeholder="e.g. Acme Running")
-        na_url = st.text_input("Website URL", key="na_url", placeholder="https://example.com")
+        na_url = st.text_input(
+            "Domain or full URL — e.g. nandos.com.au", key="na_url", placeholder="nandos.com.au",
+        )
+        # Live preview of the clean URL that WILL be crawled (tracking junk stripped),
+        # using the shared normaliser so it matches exactly what runs.
+        if (na_url or "").strip():
+            from src.engine.url_utils import normalise_site_url
+            try:
+                st.caption(f"Auditing: `{normalise_site_url(na_url)}`")
+            except ValueError as _exc:
+                st.caption(f"⚠️ {_exc}")
         na_queries = st.text_area(
             "Target queries (one per line)", key="na_queries", height=130,
             placeholder="What are the best running shoe brands?\nMost popular sneakers right now?",

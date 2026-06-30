@@ -7,25 +7,25 @@ import json
 import sys
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 import yaml
 
+from src.engine.url_utils import normalise_site_url
+
 MAX_QUERIES = 10
-
-
-def _normalize_url(value: str) -> str:
-    value = (value or "").strip()
-    if value and "://" not in value:
-        value = "https://" + value
-    return value
 
 
 def _validate(params: dict[str, Any]) -> tuple[str, str, str, list[str], str | None, str | None, str | None, str, list[str]]:
     errors: list[str] = []
     client = str(params.get("client") or "").strip()
     brand = str(params.get("brand") or "").strip()
-    domain = _normalize_url(str(params.get("domain") or params.get("url") or ""))
+    # Shared normaliser (same as Streamlit + the crawl entry) — clean URL, strip tracking.
+    raw_domain = str(params.get("domain") or params.get("url") or "")
+    try:
+        domain = normalise_site_url(raw_domain)
+    except ValueError as exc:
+        domain = raw_domain.strip()
+        errors.append(str(exc))
     queries = [str(q).strip() for q in (params.get("queries") or []) if str(q).strip()]
     geo_provider = str(params.get("geo_provider") or "").strip().lower() or None
     geo_model = str(params.get("geo_model") or "").strip() or None
@@ -36,9 +36,6 @@ def _validate(params: dict[str, Any]) -> tuple[str, str, str, list[str], str | N
         errors.append("client is required")
     if not brand:
         errors.append("brand is required")
-    parsed = urlparse(domain)
-    if not (parsed.scheme in ("http", "https") and parsed.netloc and "." in parsed.netloc):
-        errors.append("domain must be a valid http(s) URL")
     if not queries:
         errors.append("at least one query is required")
     if len(queries) > MAX_QUERIES:

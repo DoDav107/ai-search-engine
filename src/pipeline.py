@@ -146,6 +146,11 @@ def build_audit_configs(
     openai/web_search/timeouts/caps, reasoning effort — are inherited from config, so
     nothing client-specific is hardcoded. brand_aliases default to just the brand.
     """
+    # Authoritative normalisation: both surfaces funnel through here, so cleaning the URL
+    # once guarantees the crawler + saved report always get one clean, tracking-free URL.
+    from src.engine.url_utils import normalise_site_url
+
+    base_url = normalise_site_url(base_url)
     seo_config = scoring.load_config(crawl_config_path)
     site = {**seo_config.get("site", {}), "name": brand, "base_url": base_url, "seed_urls": ["/"]}
     crawl = {

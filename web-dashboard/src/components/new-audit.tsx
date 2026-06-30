@@ -54,9 +54,15 @@ type GeoOptions = {
 const BTN =
   "inline-flex cursor-pointer items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-2 text-sm font-medium text-foreground backdrop-blur-md transition-colors hover:border-white/20 hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-50";
 
-function normalizeDomain(domain: string): string {
-  const value = domain.trim();
-  return value && !value.includes("://") ? `https://${value}` : value;
+// Normalise via the SHARED server-side normaliser so the preview + submitted URL are
+// byte-for-byte what the crawler receives (no client/server drift). Returns {url} or {error}.
+async function normalizeViaServer(raw: string): Promise<{ url?: string; error?: string }> {
+  try {
+    const res = await fetch(`/api/normalize-url?url=${encodeURIComponent(raw)}`, { cache: "no-store" });
+    return (await res.json()) as { url?: string; error?: string };
+  } catch (e) {
+    return { error: `Could not validate the URL: ${String(e)}` };
+  }
 }
 
 function parseQueries(raw: string): string[] {
@@ -67,14 +73,9 @@ function validate(client: string, brand: string, domain: string, queries: string
   const errors: string[] = [];
   if (!client.trim()) errors.push("Client is required.");
   if (!brand.trim()) errors.push("Brand / company name is required.");
-  try {
-    const u = new URL(normalizeDomain(domain));
-    if (!(u.protocol === "http:" || u.protocol === "https:") || !u.hostname.includes(".")) {
-      throw new Error("bad");
-    }
-  } catch {
-    errors.push("Enter a valid domain or website URL (e.g. https://example.com).");
-  }
+  // URL shape is validated authoritatively by the shared server normaliser in handleSubmit;
+  // here we only require a non-empty value.
+  if (!domain.trim()) errors.push("Enter a domain or website URL (e.g. nandos.com.au).");
   if (queries.length === 0) errors.push("Add at least one target query (one per line).");
   if (queries.length > MAX_QUERIES) {
     errors.push(`Too many queries (${queries.length}). The cap is ${MAX_QUERIES} — remove some.`);
@@ -118,6 +119,10 @@ export function NewAudit({ onComplete }: { onComplete: () => void }) {
   const [client, setClient] = useState("");
   const [brand, setBrand] = useState("");
   const [domain, setDomain] = useState("");
+  // Live preview of the clean URL that will actually be crawled (shared Python normaliser
+  // via /api/normalize-url), so the user sees tracking junk stripped before paying for a run.
+  const [urlPreview, setUrlPreview] = useState<string | null>(null);
+  const [urlError, setUrlError] = useState<string | null>(null);
   const [queriesRaw, setQueriesRaw] = useState("");
   const [geoOptions, setGeoOptions] = useState<GeoOptions | null>(null);
   const [geoProvider, setGeoProvider] = useState("openai");
@@ -208,6 +213,19 @@ export function NewAudit({ onComplete }: { onComplete: () => void }) {
     setErrors(errs);
     if (errs.length) return;
 
+    // Authoritative URL normalisation via the shared server normaliser — block on invalid,
+    // and submit the clean URL so the crawler/report never see tracking junk.
+    const norm = await normalizeViaServer(domain);
+    if (!norm.url) {
+      setUrlError(norm.error ?? "Enter a valid domain or website URL.");
+      setUrlPreview(null);
+      setErrors([norm.error ?? "Enter a valid domain or website URL."]);
+      return;
+    }
+    const cleanDomain = norm.url;
+    setUrlPreview(cleanDomain);
+    setUrlError(null);
+
     setRunError(null);
     setEvents([]);
     setSaveKeyNote(null);
@@ -243,7 +261,7 @@ export function NewAudit({ onComplete }: { onComplete: () => void }) {
         body: JSON.stringify({
           client: client.trim(),
           brand: brand.trim(),
-          domain: normalizeDomain(domain),
+          domain: cleanDomain,
           queries,
           geo_provider: geoProvider,
           geo_model: geoModel,
@@ -377,13 +395,38 @@ export function NewAudit({ onComplete }: { onComplete: () => void }) {
               />
             </label>
             <label className="text-sm sm:col-span-2">
-              <span className="mb-1 block text-xs font-medium text-muted-foreground">Domain / website URL</span>
+              <span className="mb-1 block text-xs font-medium text-muted-foreground">
+                Domain or full URL — e.g. nandos.com.au
+              </span>
               <input
                 value={domain}
-                onChange={(e) => setDomain(e.target.value)}
-                placeholder="https://example.com"
+                onChange={(e) => {
+                  setDomain(e.target.value);
+                  setUrlPreview(null);
+                  setUrlError(null);
+                }}
+                onBlur={async (e) => {
+                  const raw = e.target.value.trim();
+                  if (!raw) {
+                    setUrlPreview(null);
+                    setUrlError(null);
+                    return;
+                  }
+                  const norm = await normalizeViaServer(raw);
+                  setUrlPreview(norm.url ?? null);
+                  setUrlError(norm.url ? null : norm.error ?? "Enter a valid domain or website URL.");
+                }}
+                placeholder="nandos.com.au"
                 className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm outline-none focus:border-primary/60"
               />
+              {urlPreview && (
+                <span className="mt-1 block text-[11px] text-muted-foreground">
+                  Auditing: <span className="font-mono text-foreground/80">{urlPreview}</span>
+                </span>
+              )}
+              {urlError && (
+                <span className="mt-1 block text-[11px] text-danger">{urlError}</span>
+              )}
             </label>
           </div>
 

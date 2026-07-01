@@ -877,70 +877,76 @@ combined_recs = [{**r, "_area": r.get("area") or "SEO"} for r in seo_recs] + [
 ]
 top_actions = sorted(combined_recs, key=_rec_sort_key)[:5]
 
-st.markdown("## 🎯 Top Priority Actions")
-if top_actions:
-    cards = []
-    for r in top_actions:
-        pr = r.get("priority", "—")
-        color = _PRIORITY_COLOR.get(pr, "#64748b")
-        cards.append(
-            f"""
-            <div class="rec" style="border-left-color:{color};">
-                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-                    <span class="rtitle">{escape(r.get('title', 'Untitled'))}</span>
-                    <span>{_badge_html(pr.upper(), color)} {_badge_html(r.get('_area',''), '#475569', dark_text=False)}</span>
+_tab_overview, _tab_seo, _tab_geo, _tab_trends = st.tabs(
+    ["📋 Overview", "🔍 SEO", "🤖 GEO", "📈 Trends"]
+)
+
+with _tab_overview:
+    st.markdown("## 🎯 Top Priority Actions")
+    if top_actions:
+        cards = []
+        for r in top_actions:
+            pr = r.get("priority", "—")
+            color = _PRIORITY_COLOR.get(pr, "#64748b")
+            cards.append(
+                f"""
+                <div class="rec" style="border-left-color:{color};">
+                    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                        <span class="rtitle">{escape(r.get('title', 'Untitled'))}</span>
+                        <span>{_badge_html(pr.upper(), color)} {_badge_html(r.get('_area',''), '#475569', dark_text=False)}</span>
+                    </div>
+                    <div class="field">{escape((r.get('recommendation') or r.get('issue') or '')[:240])}</div>
                 </div>
-                <div class="field">{escape((r.get('recommendation') or r.get('issue') or '')[:240])}</div>
-            </div>
-            """
-        )
-    st.markdown("\n".join(cards), unsafe_allow_html=True)
-else:
-    st.info("No recommendations available yet.")
+                """
+            )
+        st.markdown("\n".join(cards), unsafe_allow_html=True)
+    else:
+        st.info("No recommendations available yet.")
 
 
 # ---------------------------------------------------------------------------
 # Overall scores — gauges + glass cards
 # ---------------------------------------------------------------------------
-st.markdown("## Overall Scores")
-g1, g2, g3 = st.columns(3)
-g1.plotly_chart(_gauge("Unified Score", unified), width="stretch", config={"displayModeBar": False})
-g2.plotly_chart(_gauge("SEO Score", seo_score), width="stretch", config={"displayModeBar": False})
-g3.plotly_chart(_gauge("GEO Score", geo_score), width="stretch", config={"displayModeBar": False})
+with _tab_overview:
+    st.markdown("## Overall Scores")
+    g1, g2, g3 = st.columns(3)
+    g1.plotly_chart(_gauge("Unified Score", unified), width="stretch", config={"displayModeBar": False})
+    g2.plotly_chart(_gauge("SEO Score", seo_score), width="stretch", config={"displayModeBar": False})
+    g3.plotly_chart(_gauge("GEO Score", geo_score), width="stretch", config={"displayModeBar": False})
 
-# Quick-glance glass cards
-measured = [r for r in geo_results if not r.get("error")]
-errored = [r for r in geo_results if r.get("error")]
-mentioned = sum(1 for r in measured if r.get("brand_mentioned"))
-visibility_pct = round(mentioned / len(measured) * 100, 1) if measured else 0.0
+    # Quick-glance glass cards
+    measured = [r for r in geo_results if not r.get("error")]
+    errored = [r for r in geo_results if r.get("error")]
+    mentioned = sum(1 for r in measured if r.get("brand_mentioned"))
+    visibility_pct = round(mentioned / len(measured) * 100, 1) if measured else 0.0
 
-st.markdown(
-    f"""
-    <div class="metric-grid">
-        <div class="gcard">
-            <div class="label">Pages Scored</div>
-            <div class="value">{len(scored_pages)}</div>
-            <div class="foot">{len(pages)} page(s) crawled</div>
+    st.markdown(
+        f"""
+        <div class="metric-grid">
+            <div class="gcard">
+                <div class="label">Pages Scored</div>
+                <div class="value">{len(scored_pages)}</div>
+                <div class="foot">{len(pages)} page(s) crawled</div>
+            </div>
+            <div class="gcard">
+                <div class="label">Brand Visibility</div>
+                <div class="value" style="color:{_band(visibility_pct)};">{visibility_pct}%</div>
+                <div class="foot">{mentioned}/{len(measured)} AI answers mention {escape(brand) or 'brand'}</div>
+            </div>
+            <div class="gcard">
+                <div class="label">Queries Measured</div>
+                <div class="value">{len(measured)}</div>
+                <div class="foot">{len(errored)} returned no answer (excluded)</div>
+            </div>
+            <div class="gcard">
+                <div class="label">Open Recommendations</div>
+                <div class="value">{len(seo_recs) + len(geo_recs)}</div>
+                <div class="foot">{sum(1 for r in combined_recs if r.get('priority') == 'High')} high priority</div>
+            </div>
         </div>
-        <div class="gcard">
-            <div class="label">Brand Visibility</div>
-            <div class="value" style="color:{_band(visibility_pct)};">{visibility_pct}%</div>
-            <div class="foot">{mentioned}/{len(measured)} AI answers mention {escape(brand) or 'brand'}</div>
-        </div>
-        <div class="gcard">
-            <div class="label">Queries Measured</div>
-            <div class="value">{len(measured)}</div>
-            <div class="foot">{len(errored)} returned no answer (excluded)</div>
-        </div>
-        <div class="gcard">
-            <div class="label">Open Recommendations</div>
-            <div class="value">{len(seo_recs) + len(geo_recs)}</div>
-            <div class="foot">{sum(1 for r in combined_recs if r.get('priority') == 'High')} high priority</div>
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1171,548 +1177,553 @@ def _render_trends(default_brand: str) -> None:
             )
 
 
-_render_trends(brand)
+with _tab_trends:
+    _render_trends(brand)
 
 
 # ---------------------------------------------------------------------------
 # SEO Breakdown
 # ---------------------------------------------------------------------------
-st.markdown("## 🔍 SEO Breakdown")
+with _tab_seo:
+    st.markdown("## 🔍 SEO Breakdown")
 
-# AI-generated SEO assessment — same callout treatment as the GEO assessment.
-seo_assessment = (combined.get("seo_assessment") or "").strip()
-if seo_assessment:
-    st.markdown(
-        f"<div class='rec' style='border-left-color:{ACCENT};'>{escape(seo_assessment)}</div>",
-        unsafe_allow_html=True,
-    )
-
-if scored_pages:
-    # ---- Factor-level breakdown: pass/warn/fail counts per factor ----
-    factor_ids: list[str] = []
-    counts: dict[str, dict[str, int]] = {}
-    for p in scored_pages:
-        for f in p.get("factors", []):
-            fid = f.get("id", "?")
-            if fid not in counts:
-                counts[fid] = {"pass": 0, "warn": 0, "fail": 0}
-                factor_ids.append(fid)
-            status = f.get("status", "")
-            if status in counts[fid]:
-                counts[fid][status] += 1
-
-    if factor_ids:
-        labels = [_factor_label(fid) for fid in factor_ids]
-        fig = go.Figure()
-        for status, color in (("pass", GREEN), ("warn", AMBER), ("fail", RED)):
-            fig.add_bar(
-                name=status.capitalize(),
-                x=labels,
-                y=[counts[fid][status] for fid in factor_ids],
-                marker_color=color,
-                hovertemplate="%{x}<br>" + status + ": %{y} page(s)<extra></extra>",
-            )
-        fig.update_layout(
-            barmode="stack",
-            height=360,
-            title="On-page factors across pages (pass / warn / fail)",
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font={"color": INK, "family": "Inter"},
-            legend={"orientation": "h", "y": 1.12, "x": 0},
-            margin=dict(l=10, r=10, t=70, b=10),
-            yaxis={"gridcolor": "rgba(255,255,255,0.08)", "title": "Pages"},
-            xaxis={"tickangle": -20},
+    # AI-generated SEO assessment — same callout treatment as the GEO assessment.
+    seo_assessment = (combined.get("seo_assessment") or "").strip()
+    if seo_assessment:
+        st.markdown(
+            f"<div class='rec' style='border-left-color:{ACCENT};'>{escape(seo_assessment)}</div>",
+            unsafe_allow_html=True,
         )
-        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
-    # ---- Filter / sort controls + per-page table ----
-    st.markdown("#### Per-page scores")
-    fc1, fc2, fc3 = st.columns([2, 1, 1])
-    query = fc1.text_input("Filter by URL", placeholder="e.g. /help", key="seo_url_filter")
-    rating_filter = fc2.selectbox("Rating", ["All", "🟢 ≥80", "🟡 50–79", "🔴 <50"], key="seo_rating_filter")
-    sort_by = fc3.selectbox("Sort by", ["Score ↓", "Score ↑", "URL A–Z"], key="seo_sort")
-
-    rows = [
-        {"url": _fix_mojibake(p.get("url", "")), "score": float(p.get("score") or 0.0)}
-        for p in scored_pages
-    ]
-    if query:
-        rows = [r for r in rows if query.lower() in r["url"].lower()]
-    if rating_filter == "🟢 ≥80":
-        rows = [r for r in rows if r["score"] >= 80]
-    elif rating_filter == "🟡 50–79":
-        rows = [r for r in rows if 50 <= r["score"] < 80]
-    elif rating_filter == "🔴 <50":
-        rows = [r for r in rows if r["score"] < 50]
-
-    if sort_by == "Score ↓":
-        rows.sort(key=lambda r: r["score"], reverse=True)
-    elif sort_by == "Score ↑":
-        rows.sort(key=lambda r: r["score"])
-    else:
-        rows.sort(key=lambda r: r["url"].lower())
-
-    for r in rows:
-        r["rating"] = _rating_dot(r["score"])
-
-    if rows:
-        st.dataframe(
-            pd.DataFrame(rows)[["rating", "url", "score"]],
-            column_config={
-                "rating": st.column_config.TextColumn("●", width="small"),
-                "url": st.column_config.LinkColumn("Page URL"),
-                "score": st.column_config.ProgressColumn(
-                    "Score (%)", min_value=0, max_value=100, format="%.1f%%"
-                ),
-            },
-            width="stretch",
-            hide_index=True,
-        )
-    else:
-        st.caption("No pages match the current filters.")
-
-    # ---- Per-page expander: factor-by-factor ----
-    st.markdown("#### Factor-by-factor detail")
-    for p in sorted(scored_pages, key=lambda p: float(p.get("score") or 0.0)):
-        url = _fix_mojibake(p.get("url", ""))
-        score = float(p.get("score") or 0.0)
-        with st.expander(f"{_rating_dot(score)}  {url}  —  {score:.1f}%"):
+    if scored_pages:
+        # ---- Factor-level breakdown: pass/warn/fail counts per factor ----
+        factor_ids: list[str] = []
+        counts: dict[str, dict[str, int]] = {}
+        for p in scored_pages:
             for f in p.get("factors", []):
+                fid = f.get("id", "?")
+                if fid not in counts:
+                    counts[fid] = {"pass": 0, "warn": 0, "fail": 0}
+                    factor_ids.append(fid)
                 status = f.get("status", "")
-                color = _STATUS_COLOR.get(status, "#64748b")
-                st.markdown(
-                    f"<div class='field'><b style='color:{color}'>"
-                    f"{_STATUS_LABEL.get(status, status)}</b> · "
-                    f"<b>{escape(_factor_label(f.get('id', '?')))}</b> — "
-                    f"{escape(str(f.get('message', '')))}</div>",
-                    unsafe_allow_html=True,
-                )
+                if status in counts[fid]:
+                    counts[fid][status] += 1
 
-    if skipped_pages:
-        st.caption(f"{len(skipped_pages)} crawled page(s) were not scoreable.")
-else:
-    if skipped_pages:
-        st.info(
-            "The audit ran, but no scoreable SEO pages were returned for this site. "
-            "Try a different domain path or run New Audit again later."
-        )
+        if factor_ids:
+            labels = [_factor_label(fid) for fid in factor_ids]
+            fig = go.Figure()
+            for status, color in (("pass", GREEN), ("warn", AMBER), ("fail", RED)):
+                fig.add_bar(
+                    name=status.capitalize(),
+                    x=labels,
+                    y=[counts[fid][status] for fid in factor_ids],
+                    marker_color=color,
+                    hovertemplate="%{x}<br>" + status + ": %{y} page(s)<extra></extra>",
+                )
+            fig.update_layout(
+                barmode="stack",
+                height=360,
+                title="On-page factors across pages (pass / warn / fail)",
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font={"color": INK, "family": "Inter"},
+                legend={"orientation": "h", "y": 1.12, "x": 0},
+                margin=dict(l=10, r=10, t=70, b=10),
+                yaxis={"gridcolor": "rgba(255,255,255,0.08)", "title": "Pages"},
+                xaxis={"tickangle": -20},
+            )
+            st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+
+        # ---- Filter / sort controls + per-page table ----
+        st.markdown("#### Per-page scores")
+        fc1, fc2, fc3 = st.columns([2, 1, 1])
+        query = fc1.text_input("Filter by URL", placeholder="e.g. /help", key="seo_url_filter")
+        rating_filter = fc2.selectbox("Rating", ["All", "🟢 ≥80", "🟡 50–79", "🔴 <50"], key="seo_rating_filter")
+        sort_by = fc3.selectbox("Sort by", ["Score ↓", "Score ↑", "URL A–Z"], key="seo_sort")
+
+        rows = [
+            {"url": _fix_mojibake(p.get("url", "")), "score": float(p.get("score") or 0.0)}
+            for p in scored_pages
+        ]
+        if query:
+            rows = [r for r in rows if query.lower() in r["url"].lower()]
+        if rating_filter == "🟢 ≥80":
+            rows = [r for r in rows if r["score"] >= 80]
+        elif rating_filter == "🟡 50–79":
+            rows = [r for r in rows if 50 <= r["score"] < 80]
+        elif rating_filter == "🔴 <50":
+            rows = [r for r in rows if r["score"] < 50]
+
+        if sort_by == "Score ↓":
+            rows.sort(key=lambda r: r["score"], reverse=True)
+        elif sort_by == "Score ↑":
+            rows.sort(key=lambda r: r["score"])
+        else:
+            rows.sort(key=lambda r: r["url"].lower())
+
+        for r in rows:
+            r["rating"] = _rating_dot(r["score"])
+
+        if rows:
+            st.dataframe(
+                pd.DataFrame(rows)[["rating", "url", "score"]],
+                column_config={
+                    "rating": st.column_config.TextColumn("●", width="small"),
+                    "url": st.column_config.LinkColumn("Page URL"),
+                    "score": st.column_config.ProgressColumn(
+                        "Score (%)", min_value=0, max_value=100, format="%.1f%%"
+                    ),
+                },
+                width="stretch",
+                hide_index=True,
+            )
+        else:
+            st.caption("No pages match the current filters.")
+
+        # ---- Per-page expander: factor-by-factor ----
+        st.markdown("#### Factor-by-factor detail")
+        for p in sorted(scored_pages, key=lambda p: float(p.get("score") or 0.0)):
+            url = _fix_mojibake(p.get("url", ""))
+            score = float(p.get("score") or 0.0)
+            with st.expander(f"{_rating_dot(score)}  {url}  —  {score:.1f}%"):
+                for f in p.get("factors", []):
+                    status = f.get("status", "")
+                    color = _STATUS_COLOR.get(status, "#64748b")
+                    st.markdown(
+                        f"<div class='field'><b style='color:{color}'>"
+                        f"{_STATUS_LABEL.get(status, status)}</b> · "
+                        f"<b>{escape(_factor_label(f.get('id', '?')))}</b> — "
+                        f"{escape(str(f.get('message', '')))}</div>",
+                        unsafe_allow_html=True,
+                    )
+
+        if skipped_pages:
+            st.caption(f"{len(skipped_pages)} crawled page(s) were not scoreable.")
     else:
-        st.info("No SEO page data is stored in this report yet — run **New Audit** from the sidebar.")
+        if skipped_pages:
+            st.info(
+                "The audit ran, but no scoreable SEO pages were returned for this site. "
+                "Try a different domain path or run New Audit again later."
+            )
+        else:
+            st.info("No SEO page data is stored in this report yet — run **New Audit** from the sidebar.")
 
 
 # ---------------------------------------------------------------------------
 # GEO Report
 # ---------------------------------------------------------------------------
-st.markdown("## 🤖 GEO Report")
-audit_settings = combined.get("audit_settings") or {}
-if audit_settings.get("geo_provider") or audit_settings.get("geo_model"):
-    st.caption(
-        "Measured using: "
-        f"**{audit_settings.get('geo_provider', '')} / {audit_settings.get('geo_model', '')}** "
-        f"(API key: {audit_settings.get('api_key_source', 'env')})"
-    )
-
-# AI engine / model breakdown — brand visibility differs across ChatGPT, Claude,
-# Perplexity, etc. Each enabled engine is scored separately; overall = their average.
-engine_scores = geo.get("engine_scores") or []
-if engine_scores:
-    st.markdown("#### AI Engine / Model GEO Breakdown")
-
-    def _key_label(src: str) -> str:
-        return {"env": "saved", "temporary": "temporary", "none": "none"}.get(src, src or "none")
-
-    # Group rows by provider so multiple sub-models read together.
-    _sorted = sorted(engine_scores, key=lambda e: (e.get("provider", ""), e.get("model", "")))
-    breakdown_rows = [
-        {
-            "Provider": e.get("provider", ""),
-            "Model": e.get("model", ""),
-            "Grounding": "🌐 Live search" if e.get("web_grounded") else "⚠ Model knowledge",
-            "Sources": int(e.get("sources_count") or 0),
-            "GEO score": float(e.get("geo_score") or 0.0),
-            "Visibility": round((e.get("visibility_rate") or 0.0) * 100, 1),
-            "Queries run": int(e.get("queries_run") or 0),
-            "API key": _key_label(e.get("api_key_source", "none")),
-        }
-        for e in _sorted
-    ]
-    st.dataframe(
-        pd.DataFrame(breakdown_rows),
-        width="stretch",
-        hide_index=True,
-        column_config={
-            "GEO score": st.column_config.NumberColumn("GEO score", format="%.1f%%"),
-            "Visibility": st.column_config.NumberColumn("Visibility", format="%.1f%%"),
-        },
-    )
-    grounded = [e for e in engine_scores if not e.get("error") and e.get("queries_run") and e.get("web_grounded")]
-    ungrounded = [e for e in engine_scores if not e.get("error") and e.get("queries_run") and not e.get("web_grounded")]
-    st.caption(
-        f"Headline GEO score = average of {len(grounded)} live-grounded engine(s). "
-        "🌐 = live web search · ⚠ = model knowledge only."
-    )
-    if ungrounded:
-        names = ", ".join(f"{e.get('provider')}/{e.get('model')}" for e in ungrounded)
-        st.caption(f"Excluded from the headline (ungrounded): {names}.")
-    for e in (e for e in engine_scores if e.get("grounding_warning")):
-        st.caption(f"⚠️ {e.get('provider')}/{e.get('model')}: {e.get('grounding_warning')}")
-    for e in (e for e in engine_scores if e.get("error")):
-        st.caption(f"⚠️ {e.get('provider')}/{e.get('model')} not run: {e.get('error')}")
-
-# GEO Quality Signals — beyond "is the brand mentioned": HOW it's mentioned.
-# Per engine, with EXPLICIT denominators so the numbers can't be misread:
-#   • sentiment / recommendation / brand rank → over brand-mention answers ONLY
-#     (N/A when the brand isn't mentioned — never a misleading number).
-#   • citation coverage / competitor mentions → across ALL answers (so labelled).
-# When the brand scores 0%, the section pivots to "who DID win these answers".
-def _legacy_quality_block(rows: list[dict]) -> dict:
-    """Build a quality block from old per-query rows (no stored `quality`).
-
-    Competitor names weren't ranked in old reports, so top_competitors/leaders are
-    empty — the rest (denominators, SoV, sentiment) renders identically.
-    """
-    n_all = len(rows)
-    men = [r for r in rows if r.get("brand_mentioned")]
-    sents = [float(r.get("sentiment_score") or 0.0) for r in men]
-    recs = [float(r.get("recommendation_score") or 0.0) for r in men]
-    ranks = [r.get("brand_rank_position") for r in men if r.get("brand_rank_position")]
-    cites = sum(1 for r in rows if r.get("citations_present"))
-    return {
-        "answers_total": n_all,
-        "brand_mentions": len(men),
-        "sov": round(len(men) / n_all, 4) if n_all else 0.0,
-        "sentiment": {
-            "avg": round(sum(sents) / len(sents), 3) if sents else None,
-            "positive": sum(1 for r in men if r.get("sentiment_label") == "positive"),
-            "neutral": sum(1 for r in men if r.get("sentiment_label") == "neutral"),
-            "negative": sum(1 for r in men if r.get("sentiment_label") == "negative"),
-        },
-        "recommendation": {"avg": round(sum(recs) / len(recs), 3) if recs else None},
-        "avg_brand_rank": round(sum(ranks) / len(ranks), 2) if ranks else None,
-        "citations_answers": cites,
-        "citation_coverage": round(cites / n_all, 4) if n_all else 0.0,
-        "competitor_total": sum(int(r.get("competitor_count") or 0) for r in rows),
-        "top_competitors": [],
-        "competitor_leaders": [],
-    }
-
-
-def _render_quality_block(q: dict, label: str | None = None) -> None:
-    n_all = int(q.get("answers_total") or 0)
-    n_men = int(q.get("brand_mentions") or 0)
-    if label:
-        st.markdown(f"**{label}**")
-    st.caption(
-        f"Share of Voice: **{(q.get('sov') or 0.0) * 100:.0f}%** — "
-        f"brand mentioned in {n_men} of {n_all} answers."
-    )
-
-    sent = q.get("sentiment") or {}
-    rec = q.get("recommendation") or {}
-    avg_sent = sent.get("avg")
-    avg_rec = rec.get("avg")
-    avg_rank = q.get("avg_brand_rank")
-    cite_cov = (q.get("citation_coverage") or 0.0) * 100
-
-    qc = st.columns(5)
-    if n_men:
-        qc[0].metric("Avg sentiment", f"{avg_sent:+.2f}" if avg_sent is not None else "N/A")
-        qc[1].metric("Avg recommendation", f"{avg_rec * 100:.0f}%" if avg_rec is not None else "N/A")
-        qc[4].metric("Avg brand rank", f"#{avg_rank:.1f}" if avg_rank is not None else "N/A")
-    else:
-        qc[0].metric("Avg sentiment", "N/A", help="Brand not mentioned in any answer")
-        qc[1].metric("Avg recommendation", "N/A", help="Brand not mentioned in any answer")
-        qc[4].metric("Avg brand rank", "N/A", help="Brand not mentioned in any answer")
-    # These two are ALWAYS across all answers — labelled so they aren't read as brand-specific.
-    qc[2].metric("Citation coverage", f"{cite_cov:.0f}%", help=f"Across all {n_all} answers")
-    qc[3].metric("Competitor mentions", int(q.get("competitor_total") or 0), help=f"Across all {n_all} answers")
-
-    if n_men:
+with _tab_geo:
+    st.markdown("## 🤖 GEO Report")
+    audit_settings = combined.get("audit_settings") or {}
+    if audit_settings.get("geo_provider") or audit_settings.get("geo_model"):
         st.caption(
-            f"Sentiment of {n_men} brand mention(s): "
-            f"🟢 {sent.get('positive', 0)} positive · ⚪ {sent.get('neutral', 0)} neutral · "
-            f"🔴 {sent.get('negative', 0)} negative."
+            "Measured using: "
+            f"**{audit_settings.get('geo_provider', '')} / {audit_settings.get('geo_model', '')}** "
+            f"(API key: {audit_settings.get('api_key_source', 'env')})"
         )
-    else:
-        st.caption(f"🔴 **N/A — brand not mentioned** in any of the {n_all} answers for this engine.")
 
-    # Ranked competitor breakdown (not just a total).
-    top = q.get("top_competitors") or []
-    if top:
-        st.caption(f"Top competitors across all {n_all} answers (by # answers mentioning):")
+    # AI engine / model breakdown — brand visibility differs across ChatGPT, Claude,
+    # Perplexity, etc. Each enabled engine is scored separately; overall = their average.
+    engine_scores = geo.get("engine_scores") or []
+    if engine_scores:
+        st.markdown("#### AI Engine / Model GEO Breakdown")
+
+        def _key_label(src: str) -> str:
+            return {"env": "saved", "temporary": "temporary", "none": "none"}.get(src, src or "none")
+
+        # Group rows by provider so multiple sub-models read together.
+        _sorted = sorted(engine_scores, key=lambda e: (e.get("provider", ""), e.get("model", "")))
+        breakdown_rows = [
+            {
+                "Provider": e.get("provider", ""),
+                "Model": e.get("model", ""),
+                "Grounding": "🌐 Live search" if e.get("web_grounded") else "⚠ Model knowledge",
+                "Sources": int(e.get("sources_count") or 0),
+                "GEO score": float(e.get("geo_score") or 0.0),
+                "Visibility": round((e.get("visibility_rate") or 0.0) * 100, 1),
+                "Queries run": int(e.get("queries_run") or 0),
+                "API key": _key_label(e.get("api_key_source", "none")),
+            }
+            for e in _sorted
+        ]
         st.dataframe(
-            pd.DataFrame([{"Competitor": c.get("name", ""), "Answers": int(c.get("count") or 0)} for c in top]),
-            width="stretch", hide_index=True,
+            pd.DataFrame(breakdown_rows),
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "GEO score": st.column_config.NumberColumn("GEO score", format="%.1f%%"),
+                "Visibility": st.column_config.NumberColumn("Visibility", format="%.1f%%"),
+            },
+        )
+        grounded = [e for e in engine_scores if not e.get("error") and e.get("queries_run") and e.get("web_grounded")]
+        ungrounded = [e for e in engine_scores if not e.get("error") and e.get("queries_run") and not e.get("web_grounded")]
+        st.caption(
+            f"Headline GEO score = average of {len(grounded)} live-grounded engine(s). "
+            "🌐 = live web search · ⚠ = model knowledge only."
+        )
+        if ungrounded:
+            names = ", ".join(f"{e.get('provider')}/{e.get('model')}" for e in ungrounded)
+            st.caption(f"Excluded from the headline (ungrounded): {names}.")
+        for e in (e for e in engine_scores if e.get("grounding_warning")):
+            st.caption(f"⚠️ {e.get('provider')}/{e.get('model')}: {e.get('grounding_warning')}")
+        for e in (e for e in engine_scores if e.get("error")):
+            st.caption(f"⚠️ {e.get('provider')}/{e.get('model')} not run: {e.get('error')}")
+
+    # GEO Quality Signals — beyond "is the brand mentioned": HOW it's mentioned.
+    # Per engine, with EXPLICIT denominators so the numbers can't be misread:
+    #   • sentiment / recommendation / brand rank → over brand-mention answers ONLY
+    #     (N/A when the brand isn't mentioned — never a misleading number).
+    #   • citation coverage / competitor mentions → across ALL answers (so labelled).
+    # When the brand scores 0%, the section pivots to "who DID win these answers".
+    def _legacy_quality_block(rows: list[dict]) -> dict:
+        """Build a quality block from old per-query rows (no stored `quality`).
+
+        Competitor names weren't ranked in old reports, so top_competitors/leaders are
+        empty — the rest (denominators, SoV, sentiment) renders identically.
+        """
+        n_all = len(rows)
+        men = [r for r in rows if r.get("brand_mentioned")]
+        sents = [float(r.get("sentiment_score") or 0.0) for r in men]
+        recs = [float(r.get("recommendation_score") or 0.0) for r in men]
+        ranks = [r.get("brand_rank_position") for r in men if r.get("brand_rank_position")]
+        cites = sum(1 for r in rows if r.get("citations_present"))
+        return {
+            "answers_total": n_all,
+            "brand_mentions": len(men),
+            "sov": round(len(men) / n_all, 4) if n_all else 0.0,
+            "sentiment": {
+                "avg": round(sum(sents) / len(sents), 3) if sents else None,
+                "positive": sum(1 for r in men if r.get("sentiment_label") == "positive"),
+                "neutral": sum(1 for r in men if r.get("sentiment_label") == "neutral"),
+                "negative": sum(1 for r in men if r.get("sentiment_label") == "negative"),
+            },
+            "recommendation": {"avg": round(sum(recs) / len(recs), 3) if recs else None},
+            "avg_brand_rank": round(sum(ranks) / len(ranks), 2) if ranks else None,
+            "citations_answers": cites,
+            "citation_coverage": round(cites / n_all, 4) if n_all else 0.0,
+            "competitor_total": sum(int(r.get("competitor_count") or 0) for r in rows),
+            "top_competitors": [],
+            "competitor_leaders": [],
+        }
+
+
+    def _render_quality_block(q: dict, label: str | None = None) -> None:
+        n_all = int(q.get("answers_total") or 0)
+        n_men = int(q.get("brand_mentions") or 0)
+        if label:
+            st.markdown(f"**{label}**")
+        st.caption(
+            f"Share of Voice: **{(q.get('sov') or 0.0) * 100:.0f}%** — "
+            f"brand mentioned in {n_men} of {n_all} answers."
         )
 
-    # Zero-visibility pivot: show what winning answers look like.
-    leaders = q.get("competitor_leaders") or []
-    if n_men == 0 and leaders:
-        st.caption("Brand absent — here's **who won these answers and how strongly**:")
-        st.dataframe(
-            pd.DataFrame([
-                {
-                    "Competitor": d.get("name", ""),
-                    "Mentions": int(d.get("mentions") or 0),
-                    "Sentiment": d.get("sentiment_label", "—"),
-                    "Recommendation": d.get("recommendation_strength", "—"),
-                    "Best rank": f"#{d['rank']}" if d.get("rank") else "—",
-                }
-                for d in leaders
-            ]),
-            width="stretch", hide_index=True,
-        )
+        sent = q.get("sentiment") or {}
+        rec = q.get("recommendation") or {}
+        avg_sent = sent.get("avg")
+        avg_rec = rec.get("avg")
+        avg_rank = q.get("avg_brand_rank")
+        cite_cov = (q.get("citation_coverage") or 0.0) * 100
 
+        qc = st.columns(5)
+        if n_men:
+            qc[0].metric("Avg sentiment", f"{avg_sent:+.2f}" if avg_sent is not None else "N/A")
+            qc[1].metric("Avg recommendation", f"{avg_rec * 100:.0f}%" if avg_rec is not None else "N/A")
+            qc[4].metric("Avg brand rank", f"#{avg_rank:.1f}" if avg_rank is not None else "N/A")
+        else:
+            qc[0].metric("Avg sentiment", "N/A", help="Brand not mentioned in any answer")
+            qc[1].metric("Avg recommendation", "N/A", help="Brand not mentioned in any answer")
+            qc[4].metric("Avg brand rank", "N/A", help="Brand not mentioned in any answer")
+        # These two are ALWAYS across all answers — labelled so they aren't read as brand-specific.
+        qc[2].metric("Citation coverage", f"{cite_cov:.0f}%", help=f"Across all {n_all} answers")
+        qc[3].metric("Competitor mentions", int(q.get("competitor_total") or 0), help=f"Across all {n_all} answers")
 
-_q_engines = [e for e in engine_scores if e.get("quality")]
-_quality_rows = [r for r in measured if r.get("per_query_geo_score") is not None]
-if _q_engines:
-    st.markdown("#### GEO Quality Signals")
-    st.caption(
-        "Brand-mention metrics (sentiment · recommendation · rank) are over answers that "
-        "**mention the brand**; citation coverage and competitor mentions are over **all answers**."
-    )
-    _multi = len(_q_engines) > 1
-    for e in sorted(_q_engines, key=lambda x: (x.get("provider", ""), x.get("model", ""))):
-        lbl = f"{e.get('provider', '')} / {e.get('model', '')}" if _multi else None
-        _render_quality_block(e["quality"], lbl)
-elif _quality_rows:  # backward compat: old report without a stored quality block
-    st.markdown("#### GEO Quality Signals")
-    _render_quality_block(_legacy_quality_block(_quality_rows))
-
-if geo_results:
-    gcol1, gcol2 = st.columns([1, 2])
-
-    # Brand visibility donut
-    with gcol1:
-        donut = go.Figure(
-            go.Pie(
-                values=[mentioned, max(len(measured) - mentioned, 0)],
-                labels=["Mentioned", "Absent"],
-                hole=0.68,
-                marker_colors=[_band(visibility_pct), "rgba(255,255,255,0.10)"],
-                textinfo="none",
-                sort=False,
+        if n_men:
+            st.caption(
+                f"Sentiment of {n_men} brand mention(s): "
+                f"🟢 {sent.get('positive', 0)} positive · ⚪ {sent.get('neutral', 0)} neutral · "
+                f"🔴 {sent.get('negative', 0)} negative."
             )
-        )
-        donut.update_layout(
-            height=300,
-            showlegend=False,
-            paper_bgcolor="rgba(0,0,0,0)",
-            margin=dict(l=10, r=10, t=40, b=10),
-            title="Brand visibility",
-            font={"color": INK, "family": "Inter"},
-            annotations=[
-                dict(text=f"<b>{visibility_pct}%</b>", x=0.5, y=0.55, font_size=30, showarrow=False, font_color=INK),
-                dict(text=f"{mentioned}/{len(measured)} answers", x=0.5, y=0.40, font_size=12, showarrow=False, font_color="#9aa3b8"),
-            ],
-        )
-        st.plotly_chart(donut, width="stretch", config={"displayModeBar": False})
+        else:
+            st.caption(f"🔴 **N/A — brand not mentioned** in any of the {n_all} answers for this engine.")
 
-    # Prominence per query bar
-    with gcol2:
-        qnames, qvals, qcolors = [], [], []
-        for r in measured:
-            qnames.append((r.get("query") or "")[:48])
-            if r.get("brand_mentioned"):
-                p = _prominence(r)
-                qvals.append(p if p is not None else 0.0)
-                qcolors.append(_band(p if p is not None else 0.0))
-            else:
-                qvals.append(0.0)
-                qcolors.append("rgba(255,255,255,0.10)")
-        bar = go.Figure(
-            go.Bar(
-                x=qvals, y=qnames, orientation="h", marker_color=qcolors,
-                hovertemplate="%{y}<br>Prominence: %{x:.1f}%<extra></extra>",
+        # Ranked competitor breakdown (not just a total).
+        top = q.get("top_competitors") or []
+        if top:
+            st.caption(f"Top competitors across all {n_all} answers (by # answers mentioning):")
+            st.dataframe(
+                pd.DataFrame([{"Competitor": c.get("name", ""), "Answers": int(c.get("count") or 0)} for c in top]),
+                width="stretch", hide_index=True,
             )
-        )
-        bar.update_layout(
-            height=300,
-            title="Prominence per query",
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font={"color": INK, "family": "Inter"},
-            margin=dict(l=10, r=10, t=40, b=10),
-            xaxis={"range": [0, 100], "gridcolor": "rgba(255,255,255,0.08)", "title": "Prominence (%)"},
-            yaxis={"autorange": "reversed"},
-        )
-        st.plotly_chart(bar, width="stretch", config={"displayModeBar": False})
 
-    if errored:
-        st.warning(
-            "No answer returned (excluded from scoring): "
-            + "; ".join(r.get("query", "") for r in errored)
-        )
-
-    # Share of Voice — ranked brands (subject + competitors) by presence across answers
-    sov = geo.get("share_of_voice") or []
-    sov_head = (geo.get("sov_headline") or "").strip()
-    if sov:
-        st.markdown("#### Share of Voice")
-        if sov_head:
-            st.markdown(
-                f"<div class='rec' style='border-left-color:{ACCENT};'>🏆 <b>{escape(sov_head)}</b></div>",
-                unsafe_allow_html=True,
+        # Zero-visibility pivot: show what winning answers look like.
+        leaders = q.get("competitor_leaders") or []
+        if n_men == 0 and leaders:
+            st.caption("Brand absent — here's **who won these answers and how strongly**:")
+            st.dataframe(
+                pd.DataFrame([
+                    {
+                        "Competitor": d.get("name", ""),
+                        "Mentions": int(d.get("mentions") or 0),
+                        "Sentiment": d.get("sentiment_label", "—"),
+                        "Recommendation": d.get("recommendation_strength", "—"),
+                        "Best rank": f"#{d['rank']}" if d.get("rank") else "—",
+                    }
+                    for d in leaders
+                ]),
+                width="stretch", hide_index=True,
             )
-        TOPN = 15
-        shown = list(sov[:TOPN])
-        if not any(s.get("is_subject") for s in shown):
-            subj = next((s for s in sov if s.get("is_subject")), None)
-            if subj:
-                shown.append(subj)
-        names = [s.get("brand", "") for s in shown]
-        shares = [round((s.get("share") or 0.0) * 100, 1) for s in shown]
-        colors = [ACCENT if s.get("is_subject") else "#475569" for s in shown]
-        sov_fig = go.Figure(
-            go.Bar(
-                x=shares, y=names, orientation="h", marker_color=colors,
-                text=[f"{v:.0f}%" for v in shares], textposition="auto",
-                hovertemplate="%{y}: %{x:.1f}% of answers<extra></extra>",
-            )
+
+
+    _q_engines = [e for e in engine_scores if e.get("quality")]
+    _quality_rows = [r for r in measured if r.get("per_query_geo_score") is not None]
+    if _q_engines:
+        st.markdown("#### GEO Quality Signals")
+        st.caption(
+            "Brand-mention metrics (sentiment · recommendation · rank) are over answers that "
+            "**mention the brand**; citation coverage and competitor mentions are over **all answers**."
         )
-        sov_fig.update_layout(
-            height=max(300, 26 * len(shown)),
-            title="Brands ranked by Share of Voice (presence across AI answers)",
-            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-            font={"color": INK, "family": "Inter"},
-            margin=dict(l=10, r=10, t=48, b=10),
-            xaxis={"range": [0, 100], "gridcolor": "rgba(255,255,255,0.08)", "title": "Share of measured queries (%)"},
-            yaxis={"autorange": "reversed"},
-        )
-        st.plotly_chart(sov_fig, width="stretch", config={"displayModeBar": False})
-        st.caption(f"{escape((brand or 'Subject'))} highlighted. Share = queries where the brand appears ÷ measured queries.")
+        _multi = len(_q_engines) > 1
+        for e in sorted(_q_engines, key=lambda x: (x.get("provider", ""), x.get("model", ""))):
+            lbl = f"{e.get('provider', '')} / {e.get('model', '')}" if _multi else None
+            _render_quality_block(e["quality"], lbl)
+    elif _quality_rows:  # backward compat: old report without a stored quality block
+        st.markdown("#### GEO Quality Signals")
+        _render_quality_block(_legacy_quality_block(_quality_rows))
 
-    # Per-query expander: answer excerpt + competitors
-    st.markdown("#### Query-by-query detail")
-    for r in measured:
-        q = r.get("query", "")
-        hit = bool(r.get("brand_mentioned"))
-        icon = "✅" if hit else "❌"
-        prom = _prominence(r)
-        prom_txt = f" · prominence {prom:.1f}%" if prom is not None else ""
-        pm = "/".join(p for p in [r.get("provider"), r.get("model")] if p)
-        pm_label = f"  ·  `{pm}`" if pm else ""
-        # Region badge: which locale grounded this query's search (missing → Global).
-        _loc = str(r.get("locale_applied") or "global")
-        loc_badge = "🌍 Global" if _loc == "global" else f"🌍 {_loc}"
-        with st.expander(f"{icon}  {q} · {loc_badge}{prom_txt}{pm_label}"):
-            mc = r.get("mention_count")
-            fp = r.get("first_position")
-            meta_bits = []
-            if pm:
-                meta_bits.append(f"Engine: **{pm}**")
-            _method = str(r.get("locale_method") or "none")
-            meta_bits.append(
-                f"Region: **{'Global' if _loc == 'global' else _loc}**"
-                + (f" ({_method})" if _method != "none" else "")
-            )
-            meta_bits.append(f"Brand mentioned: **{'yes' if hit else 'no'}**")
-            if mc is not None:
-                meta_bits.append(f"Mentions: **{mc}**")
-            if fp is not None:
-                meta_bits.append(f"First position: **{fp}**")
-            st.markdown(" · ".join(meta_bits))
+    if geo_results:
+        gcol1, gcol2 = st.columns([1, 2])
 
-            # GEO quality signals (defaults keep older reports rendering cleanly).
-            if r.get("per_query_geo_score") is not None or r.get("sentiment_label", "unknown") != "unknown":
-                rank = r.get("brand_rank_position")
-                pqs = r.get("per_query_geo_score")
-                quality_bits = [
-                    f"Sentiment: **{r.get('sentiment_label', 'unknown')}**",
-                    f"Recommendation: **{r.get('recommendation_strength', 'unknown')}**",
-                    f"Brand rank: **{('#' + str(rank)) if rank else 'N/A'}**",
-                    f"Citations: **{'yes' if r.get('citations_present') else 'no'}**",
-                    f"Quality score: **{pqs:.1f}%**" if pqs is not None else "Quality score: **N/A**",
-                ]
-                st.markdown(" · ".join(quality_bits))
-
-            comps = r.get("competitors_found") or []
-            if comps:
-                chips = " ".join(
-                    f"<span class='pill'>{escape(str(c))}</span>" for c in comps
+        # Brand visibility donut
+        with gcol1:
+            donut = go.Figure(
+                go.Pie(
+                    values=[mentioned, max(len(measured) - mentioned, 0)],
+                    labels=["Mentioned", "Absent"],
+                    hole=0.68,
+                    marker_colors=[_band(visibility_pct), "rgba(255,255,255,0.10)"],
+                    textinfo="none",
+                    sort=False,
                 )
-                st.markdown(f"**Competitor brands in answer:** {chips}", unsafe_allow_html=True)
-            else:
-                st.caption("No competitor brands detected in this answer.")
+            )
+            donut.update_layout(
+                height=300,
+                showlegend=False,
+                paper_bgcolor="rgba(0,0,0,0)",
+                margin=dict(l=10, r=10, t=40, b=10),
+                title="Brand visibility",
+                font={"color": INK, "family": "Inter"},
+                annotations=[
+                    dict(text=f"<b>{visibility_pct}%</b>", x=0.5, y=0.55, font_size=30, showarrow=False, font_color=INK),
+                    dict(text=f"{mentioned}/{len(measured)} answers", x=0.5, y=0.40, font_size=12, showarrow=False, font_color="#9aa3b8"),
+                ],
+            )
+            st.plotly_chart(donut, width="stretch", config={"displayModeBar": False})
 
-            answer = (r.get("answer") or "").strip()
-            if answer:
-                excerpt = answer[:900] + ("…" if len(answer) > 900 else "")
-                st.markdown("**AI answer excerpt:**")
+        # Prominence per query bar
+        with gcol2:
+            qnames, qvals, qcolors = [], [], []
+            for r in measured:
+                qnames.append((r.get("query") or "")[:48])
+                if r.get("brand_mentioned"):
+                    p = _prominence(r)
+                    qvals.append(p if p is not None else 0.0)
+                    qcolors.append(_band(p if p is not None else 0.0))
+                else:
+                    qvals.append(0.0)
+                    qcolors.append("rgba(255,255,255,0.10)")
+            bar = go.Figure(
+                go.Bar(
+                    x=qvals, y=qnames, orientation="h", marker_color=qcolors,
+                    hovertemplate="%{y}<br>Prominence: %{x:.1f}%<extra></extra>",
+                )
+            )
+            bar.update_layout(
+                height=300,
+                title="Prominence per query",
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font={"color": INK, "family": "Inter"},
+                margin=dict(l=10, r=10, t=40, b=10),
+                xaxis={"range": [0, 100], "gridcolor": "rgba(255,255,255,0.08)", "title": "Prominence (%)"},
+                yaxis={"autorange": "reversed"},
+            )
+            st.plotly_chart(bar, width="stretch", config={"displayModeBar": False})
+
+        if errored:
+            st.warning(
+                "No answer returned (excluded from scoring): "
+                + "; ".join(r.get("query", "") for r in errored)
+            )
+
+        # Share of Voice — ranked brands (subject + competitors) by presence across answers
+        sov = geo.get("share_of_voice") or []
+        sov_head = (geo.get("sov_headline") or "").strip()
+        if sov:
+            st.markdown("#### Share of Voice")
+            if sov_head:
                 st.markdown(
-                    f"<div class='rec' style='border-left-color:{ACCENT};white-space:pre-wrap;'>"
-                    f"{escape(excerpt)}</div>",
+                    f"<div class='rec' style='border-left-color:{ACCENT};'>🏆 <b>{escape(sov_head)}</b></div>",
                     unsafe_allow_html=True,
                 )
-            else:
-                st.caption("No answer text recorded.")
-else:
-    st.info("No GEO query results are stored in this report yet — run **New Audit** from the sidebar.")
-
-
-# ---------------------------------------------------------------------------
-# Recommendations
-# ---------------------------------------------------------------------------
-def _render_recs(recs: list[dict], key_prefix: str) -> None:
-    if not recs:
-        st.info("No recommendations are stored in this report yet — run **New Audit** from the sidebar.")
-        return
-
-    fc1, fc2 = st.columns([1, 1])
-    pr_filter = fc1.selectbox(
-        "Priority", ["All", "High", "Medium", "Low"], key=f"{key_prefix}_rec_pri"
-    )
-    sort_mode = fc2.selectbox(
-        "Sort", ["Priority (High→Low)", "Title A–Z"], key=f"{key_prefix}_rec_sort"
-    )
-
-    items = list(recs)
-    if pr_filter != "All":
-        items = [r for r in items if r.get("priority") == pr_filter]
-    if sort_mode == "Priority (High→Low)":
-        items.sort(key=lambda r: _PRIORITY_RANK.get(r.get("priority", ""), 1))
-    else:
-        items.sort(key=lambda r: (r.get("title") or "").lower())
-
-    if not items:
-        st.caption("No recommendations match the current filters.")
-        return
-
-    for i, r in enumerate(items):
-        pr = r.get("priority", "—")
-        color = _PRIORITY_COLOR.get(pr, "#64748b")
-        draft = (r.get("draft") or "").strip()
-        with st.container(border=True):
-            h1, h2 = st.columns([0.82, 0.18], vertical_alignment="center")
-            h1.markdown(f"#### {r.get('title', 'Untitled')}")
-            h2.markdown(
-                f"<div style='text-align:right'>{_badge_html(str(pr).upper(), color)}</div>",
-                unsafe_allow_html=True,
+            TOPN = 15
+            shown = list(sov[:TOPN])
+            if not any(s.get("is_subject") for s in shown):
+                subj = next((s for s in sov if s.get("is_subject")), None)
+                if subj:
+                    shown.append(subj)
+            names = [s.get("brand", "") for s in shown]
+            shares = [round((s.get("share") or 0.0) * 100, 1) for s in shown]
+            colors = [ACCENT if s.get("is_subject") else "#475569" for s in shown]
+            sov_fig = go.Figure(
+                go.Bar(
+                    x=shares, y=names, orientation="h", marker_color=colors,
+                    text=[f"{v:.0f}%" for v in shares], textposition="auto",
+                    hovertemplate="%{y}: %{x:.1f}% of answers<extra></extra>",
+                )
             )
-            if r.get("scope"):
-                st.caption(str(r.get("scope")))
-            st.markdown("**Issue**")
-            st.write(r.get("issue") or "No issue text stored for this recommendation.")
-            st.markdown("**Why it matters**")
-            st.write(r.get("why_it_matters") or "No rationale stored for this recommendation.")
-            st.markdown("**Recommendation**")
-            st.write(r.get("recommendation") or "No recommendation text stored for this item.")
-            if draft:
-                with st.expander("Draft fix"):
-                    _render_draft(draft)
-                    _copy_button(draft, key=f"{key_prefix}_{i}")
+            sov_fig.update_layout(
+                height=max(300, 26 * len(shown)),
+                title="Brands ranked by Share of Voice (presence across AI answers)",
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                font={"color": INK, "family": "Inter"},
+                margin=dict(l=10, r=10, t=48, b=10),
+                xaxis={"range": [0, 100], "gridcolor": "rgba(255,255,255,0.08)", "title": "Share of measured queries (%)"},
+                yaxis={"autorange": "reversed"},
+            )
+            st.plotly_chart(sov_fig, width="stretch", config={"displayModeBar": False})
+            st.caption(f"{escape((brand or 'Subject'))} highlighted. Share = queries where the brand appears ÷ measured queries.")
+
+        # Per-query expander: answer excerpt + competitors
+        st.markdown("#### Query-by-query detail")
+        for r in measured:
+            q = r.get("query", "")
+            hit = bool(r.get("brand_mentioned"))
+            icon = "✅" if hit else "❌"
+            prom = _prominence(r)
+            prom_txt = f" · prominence {prom:.1f}%" if prom is not None else ""
+            pm = "/".join(p for p in [r.get("provider"), r.get("model")] if p)
+            pm_label = f"  ·  `{pm}`" if pm else ""
+            # Region badge: which locale grounded this query's search (missing → Global).
+            _loc = str(r.get("locale_applied") or "global")
+            loc_badge = "🌍 Global" if _loc == "global" else f"🌍 {_loc}"
+            with st.expander(f"{icon}  {q} · {loc_badge}{prom_txt}{pm_label}"):
+                mc = r.get("mention_count")
+                fp = r.get("first_position")
+                meta_bits = []
+                if pm:
+                    meta_bits.append(f"Engine: **{pm}**")
+                _method = str(r.get("locale_method") or "none")
+                meta_bits.append(
+                    f"Region: **{'Global' if _loc == 'global' else _loc}**"
+                    + (f" ({_method})" if _method != "none" else "")
+                )
+                meta_bits.append(f"Brand mentioned: **{'yes' if hit else 'no'}**")
+                if mc is not None:
+                    meta_bits.append(f"Mentions: **{mc}**")
+                if fp is not None:
+                    meta_bits.append(f"First position: **{fp}**")
+                st.markdown(" · ".join(meta_bits))
+
+                # GEO quality signals (defaults keep older reports rendering cleanly).
+                if r.get("per_query_geo_score") is not None or r.get("sentiment_label", "unknown") != "unknown":
+                    rank = r.get("brand_rank_position")
+                    pqs = r.get("per_query_geo_score")
+                    quality_bits = [
+                        f"Sentiment: **{r.get('sentiment_label', 'unknown')}**",
+                        f"Recommendation: **{r.get('recommendation_strength', 'unknown')}**",
+                        f"Brand rank: **{('#' + str(rank)) if rank else 'N/A'}**",
+                        f"Citations: **{'yes' if r.get('citations_present') else 'no'}**",
+                        f"Quality score: **{pqs:.1f}%**" if pqs is not None else "Quality score: **N/A**",
+                    ]
+                    st.markdown(" · ".join(quality_bits))
+
+                comps = r.get("competitors_found") or []
+                if comps:
+                    chips = " ".join(
+                        f"<span class='pill'>{escape(str(c))}</span>" for c in comps
+                    )
+                    st.markdown(f"**Competitor brands in answer:** {chips}", unsafe_allow_html=True)
+                else:
+                    st.caption("No competitor brands detected in this answer.")
+
+                answer = (r.get("answer") or "").strip()
+                if answer:
+                    excerpt = answer[:900] + ("…" if len(answer) > 900 else "")
+                    st.markdown("**AI answer excerpt:**")
+                    st.markdown(
+                        f"<div class='rec' style='border-left-color:{ACCENT};white-space:pre-wrap;'>"
+                        f"{escape(excerpt)}</div>",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.caption("No answer text recorded.")
+    else:
+        st.info("No GEO query results are stored in this report yet — run **New Audit** from the sidebar.")
 
 
-st.markdown("## 🛠 SEO Recommendations")
-_render_recs(seo_recs, "seo")
+    # ---------------------------------------------------------------------------
+    # Recommendations
+    # ---------------------------------------------------------------------------
+    def _render_recs(recs: list[dict], key_prefix: str) -> None:
+        if not recs:
+            st.info("No recommendations are stored in this report yet — run **New Audit** from the sidebar.")
+            return
 
-st.markdown("## 🛠 GEO Recommendations")
-geo_assessment = (combined.get("geo_assessment") or "").strip()
-if geo_assessment:
-    st.markdown(
-        f"<div class='rec' style='border-left-color:{ACCENT};'>{escape(geo_assessment)}</div>",
-        unsafe_allow_html=True,
-    )
-_render_recs(geo_recs, "geo")
+        fc1, fc2 = st.columns([1, 1])
+        pr_filter = fc1.selectbox(
+            "Priority", ["All", "High", "Medium", "Low"], key=f"{key_prefix}_rec_pri"
+        )
+        sort_mode = fc2.selectbox(
+            "Sort", ["Priority (High→Low)", "Title A–Z"], key=f"{key_prefix}_rec_sort"
+        )
+
+        items = list(recs)
+        if pr_filter != "All":
+            items = [r for r in items if r.get("priority") == pr_filter]
+        if sort_mode == "Priority (High→Low)":
+            items.sort(key=lambda r: _PRIORITY_RANK.get(r.get("priority", ""), 1))
+        else:
+            items.sort(key=lambda r: (r.get("title") or "").lower())
+
+        if not items:
+            st.caption("No recommendations match the current filters.")
+            return
+
+        for i, r in enumerate(items):
+            pr = r.get("priority", "—")
+            color = _PRIORITY_COLOR.get(pr, "#64748b")
+            draft = (r.get("draft") or "").strip()
+            with st.container(border=True):
+                h1, h2 = st.columns([0.82, 0.18], vertical_alignment="center")
+                h1.markdown(f"#### {r.get('title', 'Untitled')}")
+                h2.markdown(
+                    f"<div style='text-align:right'>{_badge_html(str(pr).upper(), color)}</div>",
+                    unsafe_allow_html=True,
+                )
+                if r.get("scope"):
+                    st.caption(str(r.get("scope")))
+                st.markdown("**Issue**")
+                st.write(r.get("issue") or "No issue text stored for this recommendation.")
+                st.markdown("**Why it matters**")
+                st.write(r.get("why_it_matters") or "No rationale stored for this recommendation.")
+                st.markdown("**Recommendation**")
+                st.write(r.get("recommendation") or "No recommendation text stored for this item.")
+                if draft:
+                    with st.expander("Draft fix"):
+                        _render_draft(draft)
+                        _copy_button(draft, key=f"{key_prefix}_{i}")
+
+
+with _tab_seo:
+    st.markdown("## 🛠 SEO Recommendations")
+    _render_recs(seo_recs, "seo")
+
+with _tab_geo:
+    st.markdown("## 🛠 GEO Recommendations")
+    geo_assessment = (combined.get("geo_assessment") or "").strip()
+    if geo_assessment:
+        st.markdown(
+            f"<div class='rec' style='border-left-color:{ACCENT};'>{escape(geo_assessment)}</div>",
+            unsafe_allow_html=True,
+        )
+    _render_recs(geo_recs, "geo")

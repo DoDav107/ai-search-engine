@@ -457,7 +457,7 @@ function QueryRow({ r }: { r: GeoResult }) {
   );
 }
 
-export function GeoSection({ report }: { report: Report }) {
+export function GeoSection({ report, showAssessment = true }: { report: Report; showAssessment?: boolean }) {
   const reduce = useReducedMotion();
   const results = useMemo(() => report.geo_report?.results ?? [], [report.geo_report?.results]);
   const brand = report.geo_report?.brand ?? report.brand ?? "Subject";
@@ -530,7 +530,7 @@ export function GeoSection({ report }: { report: Report }) {
           </div>
         </motion.div>
 
-        {report.geo_assessment && (
+        {showAssessment && report.geo_assessment && (
           <motion.div variants={sectionItem} className={`${GLASS} p-5 sm:p-6`}>
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Assessment

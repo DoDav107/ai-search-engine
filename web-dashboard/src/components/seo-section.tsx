@@ -135,7 +135,7 @@ function PageRow({ page }: { page: PageReport }) {
 
 type SortKey = "score" | "url";
 
-export function SeoSection({ report }: { report: Report }) {
+export function SeoSection({ report, showAssessment = true }: { report: Report; showAssessment?: boolean }) {
   const pages = useMemo(() => report.seo_report?.pages ?? [], [report.seo_report?.pages]);
   const scoredPages = useMemo(() => pages.filter((page) => page.factors.length > 0), [pages]);
   const [sortKey, setSortKey] = useState<SortKey>("score");
@@ -181,7 +181,7 @@ export function SeoSection({ report }: { report: Report }) {
           No SEO page data is stored in this report yet. Run a new audit from the dashboard.
         </motion.div>
       )}
-      {report.seo_assessment && (
+      {showAssessment && report.seo_assessment && (
         <motion.div variants={sectionItem} className={`${GLASS} mb-6 p-5 sm:p-6`}>
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Assessment

@@ -10,7 +10,8 @@ import { RecommendationsSection } from "./recommendations-section";
 import { TrendsSection } from "./trends-section";
 import { ExportButton } from "./export-button";
 import { NewAudit } from "./new-audit";
-import type { Report } from "@/lib/report";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
+import { GLASS, type Report } from "@/lib/report";
 
 const container: Variants = {
   hidden: { opacity: 0 },
@@ -40,6 +41,9 @@ export function Dashboard() {
   const [report, setReport] = useState<Report | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // Selected report tab. Lives here (not reset on report re-fetch/re-run) so switching
+  // tabs and completing a New Audit keep the user on their chosen tab.
+  const [tab, setTab] = useState("overview");
 
   // Reusable so the "New Audit" flow can reload the dashboard on completion.
   const loadReport = useCallback(() => {
@@ -137,29 +141,64 @@ export function Dashboard() {
             </motion.div>
           </motion.header>
 
-          {/* Hero score cards */}
-          <motion.section
-            initial={initial}
-            animate="show"
-            variants={container}
-            className="grid grid-cols-1 gap-5 sm:gap-6 md:grid-cols-3"
-            aria-label="Overall scores"
-          >
-            <ScoreCard
-              label="Unified Score"
-              value={report.unified_score ?? 0}
-              icon={Activity}
-              featured
-            />
-            <ScoreCard label="SEO Score" value={report.seo_score ?? 0} icon={Search} />
-            <ScoreCard label="GEO Score" value={report.geo_score ?? 0} icon={Bot} />
-          </motion.section>
+          {/* Tabbed report — same data (fetched once), grouped so users don't scroll
+              through everything. Tab selection persists across re-runs (state above). */}
+          <Tabs value={tab} onValueChange={setTab}>
+            <TabsList className="mb-8">
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="seo">SEO</TabsTrigger>
+              <TabsTrigger value="geo">GEO</TabsTrigger>
+              <TabsTrigger value="trends">Trends</TabsTrigger>
+            </TabsList>
 
-          {/* Data sections */}
-          <SeoSection report={report} />
-          <GeoSection report={report} />
-          <RecommendationsSection report={report} />
-          <TrendsSection defaultClient={report.client ?? report.brand} />
+            <TabsContent value="overview">
+              <motion.section
+                initial={initial}
+                animate="show"
+                variants={container}
+                className="grid grid-cols-1 gap-5 sm:gap-6 md:grid-cols-3"
+                aria-label="Overall scores"
+              >
+                <ScoreCard label="Unified Score" value={report.unified_score ?? 0} icon={Activity} featured />
+                <ScoreCard label="SEO Score" value={report.seo_score ?? 0} icon={Search} />
+                <ScoreCard label="GEO Score" value={report.geo_score ?? 0} icon={Bot} />
+              </motion.section>
+
+              {/* Assessments (grounded narratives) — surfaced up front on Overview. */}
+              {(report.seo_assessment || report.geo_assessment) && (
+                <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-2">
+                  {report.seo_assessment && (
+                    <div className={`${GLASS} p-5 sm:p-6`}>
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">SEO Assessment</p>
+                      <p className="mt-2 text-sm leading-relaxed text-foreground/85">{report.seo_assessment}</p>
+                    </div>
+                  )}
+                  {report.geo_assessment && (
+                    <div className={`${GLASS} p-5 sm:p-6`}>
+                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">GEO Assessment</p>
+                      <p className="mt-2 text-sm leading-relaxed text-foreground/85">{report.geo_assessment}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <RecommendationsSection report={report} only="top" />
+            </TabsContent>
+
+            <TabsContent value="seo">
+              <SeoSection report={report} showAssessment={false} />
+              <RecommendationsSection report={report} only="seo" />
+            </TabsContent>
+
+            <TabsContent value="geo">
+              <GeoSection report={report} showAssessment={false} />
+              <RecommendationsSection report={report} only="geo" />
+            </TabsContent>
+
+            <TabsContent value="trends">
+              <TrendsSection defaultClient={report.client ?? report.brand} />
+            </TabsContent>
+          </Tabs>
         </>
       )}
     </main>

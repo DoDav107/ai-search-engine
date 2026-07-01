@@ -151,8 +151,17 @@ function RecCard({ rec, index, reduce }: { rec: Recommendation; index: number; r
   );
 }
 
-export function RecommendationsSection({ report }: { report: Report }) {
+// `only` lets the tabbed layout render just one group (Top Priority on Overview, SEO recs
+// on the SEO tab, GEO recs on the GEO tab). Omitted → render all three (backward compatible).
+export function RecommendationsSection({
+  report,
+  only,
+}: {
+  report: Report;
+  only?: "top" | "seo" | "geo";
+}) {
   const reduce = useReducedMotion() ?? false;
+  const show = (part: "top" | "seo" | "geo") => !only || only === part;
   // Normalise every item to a safe object up front (string item → object; missing fields
   // filled), so sorting and rendering never touch undefined fields.
   const seo = ((report.seo_recommendations ?? []) as RawRec[]).map(asRec);
@@ -169,6 +178,7 @@ export function RecommendationsSection({ report }: { report: Report }) {
   return (
     <>
       {/* Top Priority Actions */}
+      {show("top") && (
       <Section
         title="Top Priority Actions"
         subtitle="Highest-impact fixes across SEO and GEO"
@@ -199,8 +209,10 @@ export function RecommendationsSection({ report }: { report: Report }) {
           })}
         </motion.div>
       </Section>
+      )}
 
       {/* SEO Recommendations */}
+      {show("seo") && (
       <Section title="SEO Recommendations" subtitle={`${seoSorted.length} items`}>
         {seoSorted.length === 0 ? (
           <p className={`${GLASS} p-5 text-sm text-muted-foreground`}>
@@ -214,8 +226,10 @@ export function RecommendationsSection({ report }: { report: Report }) {
           </div>
         )}
       </Section>
+      )}
 
       {/* GEO Recommendations */}
+      {show("geo") && (
       <Section title="GEO Recommendations" subtitle={`${geoSorted.length} items`}>
         {geoSorted.length === 0 ? (
           <p className={`${GLASS} p-5 text-sm text-muted-foreground`}>
@@ -229,6 +243,7 @@ export function RecommendationsSection({ report }: { report: Report }) {
           </div>
         )}
       </Section>
+      )}
     </>
   );
 }

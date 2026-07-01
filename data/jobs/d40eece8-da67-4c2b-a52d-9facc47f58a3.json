@@ -1,0 +1,83 @@
+{
+  "jobId": "d40eece8-da67-4c2b-a52d-9facc47f58a3",
+  "status": "done",
+  "client": "Boba Boba",
+  "brand": "Boba Boba",
+  "domain": "https://bobaboba.com.au",
+  "queries": [
+    "Best bubble tea place in Perth?",
+    "Best bubble tea shop?",
+    "Best bubble tea to get in Perth?"
+  ],
+  "startedAt": "2026-06-24T11:54:39.550Z",
+  "updatedAt": "2026-06-24T11:56:07.950Z",
+  "events": [
+    {
+      "phase": "queued",
+      "message": "Preparing pipeline config."
+    },
+    {
+      "phase": "start",
+      "message": "Launching Python pipeline."
+    },
+    {
+      "phase": "crawl",
+      "message": "Crawling site and scoring SEO factors…"
+    },
+    {
+      "phase": "crawl_done",
+      "message": "Scored 1 page(s).",
+      "pages": 1
+    },
+    {
+      "phase": "geo_start",
+      "message": "Measuring GEO brand visibility…",
+      "total": 3
+    },
+    {
+      "phase": "geo",
+      "index": 1,
+      "total": 3,
+      "query": "Best bubble tea place in Perth?",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 2,
+      "total": 3,
+      "query": "Best bubble tea shop?",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 3,
+      "total": 3,
+      "query": "Best bubble tea to get in Perth?",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "recommend",
+      "message": "Building recommendations and draft fixes…"
+    },
+    {
+      "phase": "saving",
+      "message": "Saving report (latest + history) and PDF…"
+    },
+    {
+      "phase": "done",
+      "message": "Audit complete.",
+      "unified_score": 0,
+      "seo_score": 0,
+      "geo_score": 0
+    }
+  ],
+  "config": {
+    "crawl": "/Users/dodav107/Desktop/Uni_Level_3/CITS3009/Eloize/ai-search-engine/data/jobs/configs/d40eece8-da67-4c2b-a52d-9facc47f58a3/crawl_config.yaml",
+    "geo": "/Users/dodav107/Desktop/Uni_Level_3/CITS3009/Eloize/ai-search-engine/data/jobs/configs/d40eece8-da67-4c2b-a52d-9facc47f58a3/geo_config.yaml"
+  },
+  "pid": 62766,
+  "finishedAt": "2026-06-24T11:56:07.950Z"
+}

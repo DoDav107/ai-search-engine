@@ -1,0 +1,52 @@
+engine: live
+brand: eloize
+brand_aliases:
+- eloize
+competitors: []
+engines:
+- provider: mock
+  model: mock-default
+  enabled: false
+- provider: openai
+  model: gpt-5.5
+  enabled: true
+- provider: anthropic
+  model: claude-sonnet
+  enabled: false
+- provider: perplexity
+  model: sonar
+  enabled: false
+queries:
+- What companies offer AI-powered reminder and follow-up tools?
+- Best AI tools for customer follow-up automation?
+- Which platforms help businesses reduce missed follow-ups?
+- Best AI tools for improving client reminders and retention?
+- What are the best AI automation tools for service businesses?
+openai:
+  mode: live
+  model: gpt-5.5
+  max_completion_tokens: 500
+  measurement_max_completion_tokens: 2000
+  reasoning_effort: low
+  max_calls_per_run: 50
+  advisory_max_completion_tokens: 3500
+  advisory_timeout: 120
+web_search:
+  enabled: true
+  reasoning_effort: low
+  max_output_tokens: 2000
+  timeout: 180
+competitor_extraction:
+  enabled: true
+  model: gpt-4o-mini
+  max_completion_tokens: 300
+scoring:
+  visibility_weight: 0.35
+  prominence_weight: 0.2
+  sentiment_weight: 0.15
+  recommendation_weight: 0.15
+  citation_weight: 0.1
+  accuracy_weight: 0.05
+  accuracy_unknown_score: 0.5
+  accuracy_keywords: []
+client: eloize

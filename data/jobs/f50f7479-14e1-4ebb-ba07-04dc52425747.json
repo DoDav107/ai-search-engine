@@ -1,0 +1,101 @@
+{
+  "jobId": "f50f7479-14e1-4ebb-ba07-04dc52425747",
+  "status": "done",
+  "client": "Adidas",
+  "brand": "Adidas",
+  "domain": "https://www.adidas.com.au",
+  "queries": [
+    "best running shoes?",
+    "best sports brand?",
+    "best athletic wear?",
+    "best soccer boots?",
+    "best active brand wear?"
+  ],
+  "startedAt": "2026-06-24T12:58:56.453Z",
+  "updatedAt": "2026-06-24T13:01:46.373Z",
+  "events": [
+    {
+      "phase": "queued",
+      "message": "Preparing pipeline config."
+    },
+    {
+      "phase": "start",
+      "message": "Launching Python pipeline."
+    },
+    {
+      "phase": "crawl",
+      "message": "Crawling site and scoring SEO factors…"
+    },
+    {
+      "phase": "crawl_done",
+      "message": "Scored 1 page(s).",
+      "pages": 1
+    },
+    {
+      "phase": "geo_start",
+      "message": "Measuring GEO brand visibility…",
+      "total": 5
+    },
+    {
+      "phase": "geo",
+      "index": 1,
+      "total": 5,
+      "query": "best running shoes?",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 2,
+      "total": 5,
+      "query": "best sports brand?",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 3,
+      "total": 5,
+      "query": "best athletic wear?",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 4,
+      "total": 5,
+      "query": "best soccer boots?",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 5,
+      "total": 5,
+      "query": "best active brand wear?",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "recommend",
+      "message": "Building recommendations and draft fixes…"
+    },
+    {
+      "phase": "saving",
+      "message": "Saving report (latest + history) and PDF…"
+    },
+    {
+      "phase": "done",
+      "message": "Audit complete.",
+      "unified_score": 32.6,
+      "seo_score": 0,
+      "geo_score": 65.2
+    }
+  ],
+  "config": {
+    "crawl": "/Users/dodav107/Desktop/Uni_Level_3/CITS3009/Eloize/ai-search-engine/data/jobs/configs/f50f7479-14e1-4ebb-ba07-04dc52425747/crawl_config.yaml",
+    "geo": "/Users/dodav107/Desktop/Uni_Level_3/CITS3009/Eloize/ai-search-engine/data/jobs/configs/f50f7479-14e1-4ebb-ba07-04dc52425747/geo_config.yaml"
+  },
+  "pid": 88845,
+  "finishedAt": "2026-06-24T13:01:46.373Z"
+}

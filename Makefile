@@ -14,7 +14,7 @@ WEB_PORT ?= 3000
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install pipeline dashboard web all
+.PHONY: help install pipeline dashboard web all check-ports
 
 help:  ## Show available targets
 	@echo "Usage: make <target>"
@@ -36,10 +36,35 @@ dashboard:  ## Launch the Streamlit dashboard (http://localhost:$(STREAMLIT_PORT
 web:  ## Launch the Next.js dashboard (http://localhost:$(WEB_PORT))
 	cd $(WEB_DIR) && npm run dev -- -p $(WEB_PORT)
 
-all:  ## Launch BOTH dashboards together; Ctrl-C stops both
+check-ports:
+	@for port in $(STREAMLIT_PORT) $(WEB_PORT); do \
+		if lsof -n -P -iTCP:$$port -sTCP:LISTEN >/dev/null 2>&1; then \
+			echo "Port $$port is already in use:"; \
+			lsof -n -P -iTCP:$$port -sTCP:LISTEN; \
+			echo ""; \
+			echo "Stop that process first, or run with a different port, e.g. WEB_PORT=3001 make all"; \
+			exit 1; \
+		fi; \
+	done
+
+all: check-ports  ## Launch BOTH dashboards together; Ctrl-C stops both
 	@echo "Streamlit -> http://localhost:$(STREAMLIT_PORT)   Next.js -> http://localhost:$(WEB_PORT)"
 	@echo "(Ctrl-C stops both)"
-	@trap 'kill 0' INT TERM EXIT; \
+	@cleanup() { \
+		trap - INT TERM EXIT; \
+		[ -n "$$streamlit_pid" ] && kill "$$streamlit_pid" >/dev/null 2>&1 || true; \
+		[ -n "$$web_pid" ] && kill "$$web_pid" >/dev/null 2>&1 || true; \
+	}; \
+	trap 'cleanup; exit 0' INT TERM; \
+	trap cleanup EXIT; \
 	$(PYTHON) -m streamlit run src/dashboard/app.py --server.port $(STREAMLIT_PORT) --server.headless true & \
+	streamlit_pid=$$!; \
 	( cd $(WEB_DIR) && npm run dev -- -p $(WEB_PORT) ) & \
-	wait
+	web_pid=$$!; \
+	while kill -0 "$$streamlit_pid" >/dev/null 2>&1 && kill -0 "$$web_pid" >/dev/null 2>&1; do \
+		sleep 1; \
+	done; \
+	wait "$$streamlit_pid" >/dev/null 2>&1; streamlit_status=$$?; \
+	wait "$$web_pid" >/dev/null 2>&1; web_status=$$?; \
+	if [ "$$streamlit_status" -ne 0 ] && [ "$$streamlit_status" -ne 143 ]; then exit "$$streamlit_status"; fi; \
+	if [ "$$web_status" -ne 0 ] && [ "$$web_status" -ne 143 ]; then exit "$$web_status"; fi

@@ -1,0 +1,101 @@
+{
+  "jobId": "e7e318d1-59ef-4e66-963b-6843731937a9",
+  "status": "done",
+  "client": "nike",
+  "brand": "nike",
+  "domain": "https://www.nike.com/au/",
+  "queries": [
+    "best running shoes?",
+    "best active wear brand?",
+    "best sports brand?",
+    "best soccer boots?",
+    "best athletic wear brand?"
+  ],
+  "startedAt": "2026-06-24T13:39:30.376Z",
+  "updatedAt": "2026-06-24T13:40:30.652Z",
+  "events": [
+    {
+      "phase": "queued",
+      "message": "Preparing pipeline config."
+    },
+    {
+      "phase": "start",
+      "message": "Launching Python pipeline."
+    },
+    {
+      "phase": "crawl",
+      "message": "Crawling site and scoring SEO factors…"
+    },
+    {
+      "phase": "crawl_done",
+      "message": "Scored 12 page(s).",
+      "pages": 12
+    },
+    {
+      "phase": "geo_start",
+      "message": "Measuring GEO brand visibility…",
+      "total": 5
+    },
+    {
+      "phase": "geo",
+      "index": 1,
+      "total": 5,
+      "query": "best running shoes?",
+      "web_search_used": false,
+      "error": "OpenAI rate limit hit: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}"
+    },
+    {
+      "phase": "geo",
+      "index": 2,
+      "total": 5,
+      "query": "best active wear brand?",
+      "web_search_used": false,
+      "error": "OpenAI rate limit hit: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}"
+    },
+    {
+      "phase": "geo",
+      "index": 3,
+      "total": 5,
+      "query": "best sports brand?",
+      "web_search_used": false,
+      "error": "OpenAI rate limit hit: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}"
+    },
+    {
+      "phase": "geo",
+      "index": 4,
+      "total": 5,
+      "query": "best soccer boots?",
+      "web_search_used": false,
+      "error": "OpenAI rate limit hit: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}"
+    },
+    {
+      "phase": "geo",
+      "index": 5,
+      "total": 5,
+      "query": "best athletic wear brand?",
+      "web_search_used": false,
+      "error": "OpenAI rate limit hit: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}"
+    },
+    {
+      "phase": "recommend",
+      "message": "Building recommendations and draft fixes…"
+    },
+    {
+      "phase": "saving",
+      "message": "Saving report (latest + history) and PDF…"
+    },
+    {
+      "phase": "done",
+      "message": "Audit complete.",
+      "unified_score": 38.4,
+      "seo_score": 76.8,
+      "geo_score": 0
+    }
+  ],
+  "config": {
+    "crawl": "/Users/dodav107/Desktop/Uni_Level_3/CITS3009/Eloize/ai-search-engine/data/jobs/configs/e7e318d1-59ef-4e66-963b-6843731937a9/crawl_config.yaml",
+    "geo": "/Users/dodav107/Desktop/Uni_Level_3/CITS3009/Eloize/ai-search-engine/data/jobs/configs/e7e318d1-59ef-4e66-963b-6843731937a9/geo_config.yaml"
+  },
+  "pid": 6506,
+  "finishedAt": "2026-06-24T13:40:30.652Z"
+}

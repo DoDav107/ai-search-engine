@@ -10,7 +10,8 @@ const BTN =
 // file via /api/report/pdf. Both export the same saved report — no live API calls.
 export function ExportButton({ report }: { report: Report }) {
   function handleExport() {
-    const { _generated_at: _omit, ...clean } = report;
+    const clean = { ...report };
+    delete clean._generated_at;
     const blob = new Blob([JSON.stringify(clean, null, 2)], {
       type: "application/json",
     });

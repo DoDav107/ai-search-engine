@@ -1,0 +1,83 @@
+{
+  "jobId": "d1adb8f1-d336-4357-b36e-8fc7b5760679",
+  "status": "done",
+  "client": "Adidas",
+  "brand": "Adidas",
+  "domain": "https://www.adidas.com.au",
+  "queries": [
+    "what are the best running shoes?",
+    "best soccer boots?",
+    "best athletic wear brand?"
+  ],
+  "startedAt": "2026-06-25T09:50:32.936Z",
+  "updatedAt": "2026-06-25T09:53:47.514Z",
+  "events": [
+    {
+      "phase": "queued",
+      "message": "Preparing pipeline config."
+    },
+    {
+      "phase": "start",
+      "message": "Launching Python pipeline."
+    },
+    {
+      "phase": "crawl",
+      "message": "Crawling site and scoring SEO factors…"
+    },
+    {
+      "phase": "crawl_done",
+      "message": "Scored 1 page(s).",
+      "pages": 1
+    },
+    {
+      "phase": "geo_start",
+      "message": "Measuring GEO brand visibility…",
+      "total": 3
+    },
+    {
+      "phase": "geo",
+      "index": 1,
+      "total": 3,
+      "query": "what are the best running shoes?",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 2,
+      "total": 3,
+      "query": "best soccer boots?",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 3,
+      "total": 3,
+      "query": "best athletic wear brand?",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "recommend",
+      "message": "Building recommendations and draft fixes…"
+    },
+    {
+      "phase": "saving",
+      "message": "Saving report (latest + history) and PDF…"
+    },
+    {
+      "phase": "done",
+      "message": "Audit complete.",
+      "unified_score": 51.5,
+      "seo_score": 50,
+      "geo_score": 53.1
+    }
+  ],
+  "config": {
+    "crawl": "/Users/dodav107/Desktop/Uni_Level_3/CITS3009/Eloize/ai-search-engine/data/jobs/configs/d1adb8f1-d336-4357-b36e-8fc7b5760679/crawl_config.yaml",
+    "geo": "/Users/dodav107/Desktop/Uni_Level_3/CITS3009/Eloize/ai-search-engine/data/jobs/configs/d1adb8f1-d336-4357-b36e-8fc7b5760679/geo_config.yaml"
+  },
+  "pid": 11084,
+  "finishedAt": "2026-06-25T09:53:47.514Z"
+}

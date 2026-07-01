@@ -1,0 +1,169 @@
+{
+  "jobId": "33c62741-5717-49c1-85c2-b75ce0d31644",
+  "status": "done",
+  "client": "Nandos",
+  "brand": "Nandos",
+  "domain": "https://www.nandos.com.au/?gad_source=1&gad_campaignid=15266111268&gbraid=0AAAAAoQuyQFUoyYM_zxo5w-kkGNb-XWJI&gclid=Cj0KCQjwo_PRBhDNARIsAEcVALWKjh-Ae8_ZoeNlFPtLvmdo7AXUdnk8CppUOrM-PqqbRagMfNVktTQaAoDvEALw_wcB",
+  "queries": [
+    "What are the best casual chicken restaurants in Australia?",
+    "Where can I get peri-peri chicken near me?",
+    "What are the best fast casual restaurants for grilled chicken?",
+    "Best places to eat spicy chicken in Australia?",
+    "Where should I go for a quick casual dinner with friends?",
+    "What are the best takeaway chicken restaurants?",
+    "Best restaurants for flame-grilled chicken?",
+    "Where can I get halal-friendly chicken options in Australia?",
+    "What are the best affordable restaurant chains in Australia?",
+    "Best places for chicken burgers and chips?"
+  ],
+  "geo_provider": "openai",
+  "geo_model": "gpt-5.5",
+  "api_key_source": "env",
+  "startedAt": "2026-06-29T07:13:07.796Z",
+  "updatedAt": "2026-06-29T07:18:46.192Z",
+  "events": [
+    {
+      "phase": "queued",
+      "message": "Preparing pipeline config."
+    },
+    {
+      "phase": "start",
+      "message": "Launching Python pipeline."
+    },
+    {
+      "phase": "crawl",
+      "message": "Crawling site and scoring SEO factors…"
+    },
+    {
+      "phase": "crawl_done",
+      "message": "Scored 6 page(s).",
+      "pages": 6
+    },
+    {
+      "phase": "geo_start",
+      "message": "Measuring GEO brand visibility…",
+      "total": 10
+    },
+    {
+      "phase": "geo",
+      "index": 1,
+      "total": 10,
+      "query": "What are the best casual chicken restaurants in Australia?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 2,
+      "total": 10,
+      "query": "Where can I get peri-peri chicken near me?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 3,
+      "total": 10,
+      "query": "What are the best fast casual restaurants for grilled chicken?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 4,
+      "total": 10,
+      "query": "Best places to eat spicy chicken in Australia?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 5,
+      "total": 10,
+      "query": "Where should I go for a quick casual dinner with friends?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 6,
+      "total": 10,
+      "query": "What are the best takeaway chicken restaurants?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 7,
+      "total": 10,
+      "query": "Best restaurants for flame-grilled chicken?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 8,
+      "total": 10,
+      "query": "Where can I get halal-friendly chicken options in Australia?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 9,
+      "total": 10,
+      "query": "What are the best affordable restaurant chains in Australia?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 10,
+      "total": 10,
+      "query": "Best places for chicken burgers and chips?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "recommend",
+      "message": "Building recommendations and draft fixes…"
+    },
+    {
+      "phase": "saving",
+      "message": "Saving report (latest + history) and PDF…"
+    },
+    {
+      "phase": "done",
+      "message": "Audit complete.",
+      "unified_score": 61.3,
+      "seo_score": 61.9,
+      "geo_score": 60.7
+    }
+  ],
+  "config": {
+    "crawl": "/Users/dodav107/Desktop/Uni_Level_3/CITS3009/Eloize/ai-search-engine/data/jobs/configs/33c62741-5717-49c1-85c2-b75ce0d31644/crawl_config.yaml",
+    "geo": "/Users/dodav107/Desktop/Uni_Level_3/CITS3009/Eloize/ai-search-engine/data/jobs/configs/33c62741-5717-49c1-85c2-b75ce0d31644/geo_config.yaml"
+  },
+  "pid": 73392,
+  "finishedAt": "2026-06-29T07:18:46.192Z"
+}

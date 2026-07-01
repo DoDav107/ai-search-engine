@@ -1,0 +1,108 @@
+engine: live
+brand: Nando's
+brand_aliases:
+- Nando's
+- Nandos
+competitors: []
+geo:
+  default_provider: openai
+  default_model: gpt-5.5
+engines:
+- provider: openai
+  model: gpt-5.5
+  enabled: true
+queries:
+- What are the best casual chicken restaurants in Australia?
+- Where can I get peri-peri chicken near me?
+- What are the best fast casual restaurants for grilled chicken?
+- Best places to eat spicy chicken in Australia?
+- Where should I go for a quick casual dinner with friends?
+- What are the best takeaway chicken restaurants?
+- Best restaurants for flame-grilled chicken?
+- Where can I get halal-friendly chicken options in Australia?
+- What are the best affordable restaurant chains in Australia?
+- Best places for chicken burgers and chips?
+openai:
+  mode: live
+  model: gpt-5.5
+  max_completion_tokens: 500
+  measurement_max_completion_tokens: 2000
+  reasoning_effort: low
+  max_calls_per_run: 50
+  advisory_max_completion_tokens: 3500
+  advisory_timeout: 120
+web_search:
+  enabled: true
+  reasoning_effort: low
+  max_output_tokens: 2000
+  timeout: 180
+competitor_extraction:
+  enabled: true
+  model: gpt-4o-mini
+  max_completion_tokens: 300
+scoring:
+  visibility_weight: 0.35
+  prominence_weight: 0.2
+  sentiment_weight: 0.15
+  recommendation_weight: 0.15
+  citation_weight: 0.1
+  accuracy_weight: 0.05
+  neutral_accuracy_value: 0.5
+  accuracy_keywords: []
+  sentiment:
+    positive:
+    - recommended
+    - recommend
+    - good choice
+    - great choice
+    - leading
+    - best
+    - top
+    - trusted
+    - specialist
+    - popular
+    - reliable
+    - excellent
+    - ideal
+    - favorite
+    - favourite
+    - go-to
+    - preferred
+    - strong option
+    - industry leader
+    negative:
+    - limited
+    - unknown
+    - not well-known
+    - not well known
+    - less established
+    - lesser-known
+    - lesser known
+    - poor
+    - weak
+    - obscure
+    - unproven
+    - outdated
+    - lacking
+    - niche
+    recommend:
+    - best
+    - top
+    - leading
+    - recommended
+    - recommend
+    - top choice
+    - ideal
+    - go-to
+    - number one
+    - most popular
+client: Nandos
+audit_settings:
+  client: Nandos
+  brand: Nando's
+  domain: https://www.nandos.com.au/
+  geo_provider: openai
+  geo_model: gpt-5.5
+  geo_locale: global
+  api_key_source: env
+  queries_count: 10

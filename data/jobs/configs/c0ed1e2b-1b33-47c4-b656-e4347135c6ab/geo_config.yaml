@@ -1,0 +1,30 @@
+engine: live
+brand: ischia
+brand_aliases:
+- ischia
+competitors: []
+queries:
+- best Italian restaurants in Perth?
+- best resturarant to get pasta in Perth?
+- best pizza restaurant in Perth ?
+- where should I go to dinner in highgate Perth?
+- where should I go for dinner near mount lawly in Perth?
+openai:
+  mode: live
+  model: gpt-5.5
+  max_completion_tokens: 500
+  measurement_max_completion_tokens: 2000
+  reasoning_effort: low
+  max_calls_per_run: 50
+  advisory_max_completion_tokens: 3500
+  advisory_timeout: 120
+web_search:
+  enabled: true
+  reasoning_effort: low
+  max_output_tokens: 2000
+  timeout: 180
+competitor_extraction:
+  enabled: true
+  model: gpt-4o-mini
+  max_completion_tokens: 300
+client: ischia

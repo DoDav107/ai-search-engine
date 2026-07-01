@@ -1,0 +1,83 @@
+{
+  "jobId": "1178b169-7cbb-44d8-8a87-feb2049ecb14",
+  "status": "done",
+  "client": "Adidas",
+  "brand": "Adidas",
+  "domain": "https://www.adidas.com.au",
+  "queries": [
+    "what are the best running shoes?",
+    "best soccer boots?",
+    "best athletic wear brand?"
+  ],
+  "startedAt": "2026-06-25T09:25:27.454Z",
+  "updatedAt": "2026-06-25T09:25:55.007Z",
+  "events": [
+    {
+      "phase": "queued",
+      "message": "Preparing pipeline config."
+    },
+    {
+      "phase": "start",
+      "message": "Launching Python pipeline."
+    },
+    {
+      "phase": "crawl",
+      "message": "Crawling site and scoring SEO factors…"
+    },
+    {
+      "phase": "crawl_done",
+      "message": "Scored 1 page(s).",
+      "pages": 1
+    },
+    {
+      "phase": "geo_start",
+      "message": "Measuring GEO brand visibility…",
+      "total": 3
+    },
+    {
+      "phase": "geo",
+      "index": 1,
+      "total": 3,
+      "query": "what are the best running shoes?",
+      "web_search_used": false,
+      "error": "OpenAI rate limit hit: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}"
+    },
+    {
+      "phase": "geo",
+      "index": 2,
+      "total": 3,
+      "query": "best soccer boots?",
+      "web_search_used": false,
+      "error": "OpenAI rate limit hit: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}"
+    },
+    {
+      "phase": "geo",
+      "index": 3,
+      "total": 3,
+      "query": "best athletic wear brand?",
+      "web_search_used": false,
+      "error": "OpenAI rate limit hit: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}"
+    },
+    {
+      "phase": "recommend",
+      "message": "Building recommendations and draft fixes…"
+    },
+    {
+      "phase": "saving",
+      "message": "Saving report (latest + history) and PDF…"
+    },
+    {
+      "phase": "done",
+      "message": "Audit complete.",
+      "unified_score": 25,
+      "seo_score": 50,
+      "geo_score": 0
+    }
+  ],
+  "config": {
+    "crawl": "/Users/dodav107/Desktop/Uni_Level_3/CITS3009/Eloize/ai-search-engine/data/jobs/configs/1178b169-7cbb-44d8-8a87-feb2049ecb14/crawl_config.yaml",
+    "geo": "/Users/dodav107/Desktop/Uni_Level_3/CITS3009/Eloize/ai-search-engine/data/jobs/configs/1178b169-7cbb-44d8-8a87-feb2049ecb14/geo_config.yaml"
+  },
+  "pid": 9459,
+  "finishedAt": "2026-06-25T09:25:55.007Z"
+}

@@ -1,0 +1,57 @@
+engine: live
+brand: Eloize
+brand_aliases:
+- Eloize
+competitors: []
+engines:
+- provider: mock
+  model: mock-default
+  enabled: true
+- provider: openai
+  model: gpt-4o-mini
+  enabled: false
+- provider: anthropic
+  model: claude-sonnet
+  enabled: false
+- provider: perplexity
+  model: sonar
+  enabled: false
+queries:
+- What are the best AI automation companies for small businesses in Australia?
+- Which companies help businesses automate repetitive workflows?
+- Best AI growth partners for startups and SMBs?
+- Who can help my business implement AI tools and automation?
+- What are the best AI consulting agencies for business process automation?
+- Which Australian companies specialise in AI workflow automation?
+- How can a small business use AI to improve sales and operations?
+- Best agencies for building custom AI agents for businesses?
+- Who can help automate customer follow-ups and internal workflows with AI?
+- What are the best AI transformation partners for growing companies?
+openai:
+  mode: live
+  model: gpt-5.5
+  max_completion_tokens: 500
+  measurement_max_completion_tokens: 2000
+  reasoning_effort: low
+  max_calls_per_run: 50
+  advisory_max_completion_tokens: 3500
+  advisory_timeout: 120
+web_search:
+  enabled: true
+  reasoning_effort: low
+  max_output_tokens: 2000
+  timeout: 180
+competitor_extraction:
+  enabled: true
+  model: gpt-4o-mini
+  max_completion_tokens: 300
+scoring:
+  visibility_weight: 0.35
+  prominence_weight: 0.2
+  sentiment_weight: 0.15
+  recommendation_weight: 0.15
+  citation_weight: 0.1
+  accuracy_weight: 0.05
+  accuracy_unknown_score: 0.5
+  accuracy_keywords: []
+client: Eloize

@@ -17,3 +17,7 @@ reports/
 # IDE
 .vscode/
 .idea/
+
+.venv/
+data/reports/
+__pycache__/

@@ -1,0 +1,166 @@
+{
+  "jobId": "2e554420-13e7-4ff8-aabd-cb5527690816",
+  "status": "done",
+  "client": "Eloize",
+  "brand": "Eloize",
+  "domain": "https://www.eloize.io",
+  "queries": [
+    "What are the best AI automation companies for small businesses in Australia?",
+    "Which companies help businesses automate repetitive workflows?",
+    "Best AI growth partners for startups and SMBs?",
+    "Who can help my business implement AI tools and automation?",
+    "What are the best AI consulting agencies for business process automation?",
+    "Which Australian companies specialise in AI workflow automation?",
+    "How can a small business use AI to improve sales and operations?",
+    "Best agencies for building custom AI agents for businesses?",
+    "Who can help automate customer follow-ups and internal workflows with AI?",
+    "What are the best AI transformation partners for growing companies?"
+  ],
+  "startedAt": "2026-06-25T13:02:48.019Z",
+  "updatedAt": "2026-06-25T13:05:02.358Z",
+  "events": [
+    {
+      "phase": "queued",
+      "message": "Preparing pipeline config."
+    },
+    {
+      "phase": "start",
+      "message": "Launching Python pipeline."
+    },
+    {
+      "phase": "crawl",
+      "message": "Crawling site and scoring SEO factors…"
+    },
+    {
+      "phase": "crawl_done",
+      "message": "Scored 7 page(s).",
+      "pages": 7
+    },
+    {
+      "phase": "geo_start",
+      "message": "Measuring GEO brand visibility…",
+      "total": 10
+    },
+    {
+      "phase": "geo",
+      "index": 1,
+      "total": 10,
+      "query": "What are the best AI automation companies for small businesses in Australia?",
+      "provider": "mock",
+      "model": "mock-default",
+      "web_search_used": false,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 2,
+      "total": 10,
+      "query": "Which companies help businesses automate repetitive workflows?",
+      "provider": "mock",
+      "model": "mock-default",
+      "web_search_used": false,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 3,
+      "total": 10,
+      "query": "Best AI growth partners for startups and SMBs?",
+      "provider": "mock",
+      "model": "mock-default",
+      "web_search_used": false,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 4,
+      "total": 10,
+      "query": "Who can help my business implement AI tools and automation?",
+      "provider": "mock",
+      "model": "mock-default",
+      "web_search_used": false,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 5,
+      "total": 10,
+      "query": "What are the best AI consulting agencies for business process automation?",
+      "provider": "mock",
+      "model": "mock-default",
+      "web_search_used": false,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 6,
+      "total": 10,
+      "query": "Which Australian companies specialise in AI workflow automation?",
+      "provider": "mock",
+      "model": "mock-default",
+      "web_search_used": false,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 7,
+      "total": 10,
+      "query": "How can a small business use AI to improve sales and operations?",
+      "provider": "mock",
+      "model": "mock-default",
+      "web_search_used": false,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 8,
+      "total": 10,
+      "query": "Best agencies for building custom AI agents for businesses?",
+      "provider": "mock",
+      "model": "mock-default",
+      "web_search_used": false,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 9,
+      "total": 10,
+      "query": "Who can help automate customer follow-ups and internal workflows with AI?",
+      "provider": "mock",
+      "model": "mock-default",
+      "web_search_used": false,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 10,
+      "total": 10,
+      "query": "What are the best AI transformation partners for growing companies?",
+      "provider": "mock",
+      "model": "mock-default",
+      "web_search_used": false,
+      "error": null
+    },
+    {
+      "phase": "recommend",
+      "message": "Building recommendations and draft fixes…"
+    },
+    {
+      "phase": "saving",
+      "message": "Saving report (latest + history) and PDF…"
+    },
+    {
+      "phase": "done",
+      "message": "Audit complete.",
+      "unified_score": 42.4,
+      "seo_score": 84.7,
+      "geo_score": 0
+    }
+  ],
+  "config": {
+    "crawl": "/Users/dodav107/Desktop/Uni_Level_3/CITS3009/Eloize/ai-search-engine/data/jobs/configs/2e554420-13e7-4ff8-aabd-cb5527690816/crawl_config.yaml",
+    "geo": "/Users/dodav107/Desktop/Uni_Level_3/CITS3009/Eloize/ai-search-engine/data/jobs/configs/2e554420-13e7-4ff8-aabd-cb5527690816/geo_config.yaml"
+  },
+  "pid": 81151,
+  "finishedAt": "2026-06-25T13:05:02.358Z"
+}

@@ -1,0 +1,107 @@
+engine: live
+brand: Nandos
+brand_aliases:
+- Nandos
+competitors: []
+geo:
+  default_provider: openai
+  default_model: gpt-5.5
+engines:
+- provider: openai
+  model: gpt-5.5
+  enabled: true
+queries:
+- What are the best casual chicken restaurants in Perth?
+- Where can I get peri-peri chicken in Perth?
+- Best places for grilled chicken near Perth?
+- Where should I go for a quick casual dinner in Perth?
+- Best takeaway chicken restaurants in Perth?
+- Where can I get spicy chicken in Perth?
+- Best affordable restaurants for students in Perth?
+- Where can I get chicken burgers and chips in Perth?
+- Best fast casual restaurants in Perth?
+- Where can I eat with friends near Perth city?
+openai:
+  mode: live
+  model: gpt-5.5
+  max_completion_tokens: 500
+  measurement_max_completion_tokens: 2000
+  reasoning_effort: low
+  max_calls_per_run: 50
+  advisory_max_completion_tokens: 3500
+  advisory_timeout: 120
+web_search:
+  enabled: true
+  reasoning_effort: low
+  max_output_tokens: 2000
+  timeout: 180
+competitor_extraction:
+  enabled: true
+  model: gpt-4o-mini
+  max_completion_tokens: 300
+scoring:
+  visibility_weight: 0.35
+  prominence_weight: 0.2
+  sentiment_weight: 0.15
+  recommendation_weight: 0.15
+  citation_weight: 0.1
+  accuracy_weight: 0.05
+  neutral_accuracy_value: 0.5
+  accuracy_keywords: []
+  sentiment:
+    positive:
+    - recommended
+    - recommend
+    - good choice
+    - great choice
+    - leading
+    - best
+    - top
+    - trusted
+    - specialist
+    - popular
+    - reliable
+    - excellent
+    - ideal
+    - favorite
+    - favourite
+    - go-to
+    - preferred
+    - strong option
+    - industry leader
+    negative:
+    - limited
+    - unknown
+    - not well-known
+    - not well known
+    - less established
+    - lesser-known
+    - lesser known
+    - poor
+    - weak
+    - obscure
+    - unproven
+    - outdated
+    - lacking
+    - niche
+    recommend:
+    - best
+    - top
+    - leading
+    - recommended
+    - recommend
+    - top choice
+    - ideal
+    - go-to
+    - number one
+    - most popular
+client: Nandos
+audit_settings:
+  client: Nandos
+  brand: Nandos
+  domain: https://www.nandos.com.au/?gad_source=1&gad_campaignid=15266111268&gbraid=0AAAAAoQuyQFUoyYM_zxo5w-kkGNb-XWJI&gclid=Cj0KCQjwo_PRBhDNARIsAEcVALWKjh-Ae8_ZoeNlFPtLvmdo7AXUdnk8CppUOrM-PqqbRagMfNVktTQaAoDvEALw_wcB
+  geo_provider: openai
+  geo_model: gpt-5.5
+  geo_locale: global
+  api_key_source: env
+  queries_count: 10

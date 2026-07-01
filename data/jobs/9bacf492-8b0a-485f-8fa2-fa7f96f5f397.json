@@ -1,0 +1,169 @@
+{
+  "jobId": "9bacf492-8b0a-485f-8fa2-fa7f96f5f397",
+  "status": "done",
+  "client": "Nandos",
+  "brand": "Nandos",
+  "domain": "https://www.nandos.com.au/?gad_source=1&gad_campaignid=15266111268&gbraid=0AAAAAoQuyQFUoyYM_zxo5w-kkGNb-XWJI&gclid=Cj0KCQjwo_PRBhDNARIsAEcVALWKjh-Ae8_ZoeNlFPtLvmdo7AXUdnk8CppUOrM-PqqbRagMfNVktTQaAoDvEALw_wcB",
+  "queries": [
+    "What are the best casual chicken restaurants in Perth?",
+    "Where can I get peri-peri chicken in Perth?",
+    "Best places for grilled chicken near Perth?",
+    "Where should I go for a quick casual dinner in Perth?",
+    "Best takeaway chicken restaurants in Perth?",
+    "Where can I get spicy chicken in Perth?",
+    "Best affordable restaurants for students in Perth?",
+    "Where can I get chicken burgers and chips in Perth?",
+    "Best fast casual restaurants in Perth?",
+    "Where can I eat with friends near Perth city?"
+  ],
+  "geo_provider": "openai",
+  "geo_model": "gpt-5.5",
+  "api_key_source": "env",
+  "startedAt": "2026-06-29T13:51:17.497Z",
+  "updatedAt": "2026-06-29T13:57:13.932Z",
+  "events": [
+    {
+      "phase": "queued",
+      "message": "Preparing pipeline config."
+    },
+    {
+      "phase": "start",
+      "message": "Launching Python pipeline."
+    },
+    {
+      "phase": "crawl",
+      "message": "Crawling site and scoring SEO factors…"
+    },
+    {
+      "phase": "crawl_done",
+      "message": "Scored 6 page(s).",
+      "pages": 6
+    },
+    {
+      "phase": "geo_start",
+      "message": "Measuring GEO brand visibility…",
+      "total": 10
+    },
+    {
+      "phase": "geo",
+      "index": 1,
+      "total": 10,
+      "query": "What are the best casual chicken restaurants in Perth?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 2,
+      "total": 10,
+      "query": "Where can I get peri-peri chicken in Perth?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 3,
+      "total": 10,
+      "query": "Best places for grilled chicken near Perth?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 4,
+      "total": 10,
+      "query": "Where should I go for a quick casual dinner in Perth?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 5,
+      "total": 10,
+      "query": "Best takeaway chicken restaurants in Perth?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 6,
+      "total": 10,
+      "query": "Where can I get spicy chicken in Perth?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 7,
+      "total": 10,
+      "query": "Best affordable restaurants for students in Perth?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 8,
+      "total": 10,
+      "query": "Where can I get chicken burgers and chips in Perth?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 9,
+      "total": 10,
+      "query": "Best fast casual restaurants in Perth?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 10,
+      "total": 10,
+      "query": "Where can I eat with friends near Perth city?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "recommend",
+      "message": "Building recommendations and draft fixes…"
+    },
+    {
+      "phase": "saving",
+      "message": "Saving report (latest + history) and PDF…"
+    },
+    {
+      "phase": "done",
+      "message": "Audit complete.",
+      "unified_score": 50.4,
+      "seo_score": 74.4,
+      "geo_score": 26.4
+    }
+  ],
+  "config": {
+    "crawl": "/Users/dodav107/Desktop/Uni_Level_3/CITS3009/Eloize/ai-search-engine/data/jobs/configs/9bacf492-8b0a-485f-8fa2-fa7f96f5f397/crawl_config.yaml",
+    "geo": "/Users/dodav107/Desktop/Uni_Level_3/CITS3009/Eloize/ai-search-engine/data/jobs/configs/9bacf492-8b0a-485f-8fa2-fa7f96f5f397/geo_config.yaml"
+  },
+  "pid": 98859,
+  "finishedAt": "2026-06-29T13:57:13.932Z"
+}

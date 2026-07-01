@@ -32,7 +32,7 @@ export async function GET() {
     return NextResponse.json(
       {
         error:
-          "Could not read latest_report.json — run `python -m src.pipeline` first.",
+          "Could not read latest_report.json — start an audit from the dashboard.",
         path: reportPath,
         detail: String(err),
       },

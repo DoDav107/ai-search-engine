@@ -1,0 +1,20 @@
+site:
+  name: Boba Boba
+  base_url: https://bobaboba.com.au
+  seed_urls:
+  - /
+crawl:
+  max_pages: 15
+  max_depth: 1
+  delay_seconds: 1.0
+  user_agent: NikeSEOBot/0.1
+  respect_robots_txt: true
+  timeout_seconds: 10
+factors:
+- title
+- meta_description
+- h1
+- canonical
+- image_alt
+- word_count
+- structured_data

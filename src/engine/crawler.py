@@ -67,6 +67,73 @@ def _extract_links(html: str, base_url: str) -> list[str]:
     return links
 
 
+def _cache_html(raw_dir: Path, url: str, html: str) -> None:
+    filename = _filesystem_safe_filename(url)
+    cache_path = raw_dir / filename
+    cache_path.write_text(html, encoding="utf-8")
+
+
+def _fetch_with_browser(url: str, timeout_seconds: float, user_agent: str) -> tuple[int | None, str | None, str | None]:
+    """Fetch a page with Chromium for sites that block simple HTTP clients."""
+    try:
+        from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+        from playwright.sync_api import sync_playwright
+    except Exception as exc:  # noqa: BLE001 - Playwright is an optional runtime dependency.
+        return None, None, f"browser fallback unavailable: {exc}"
+
+    browser = None
+    try:
+        timeout_ms = max(int(timeout_seconds * 1000), 10_000)
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            context = browser.new_context(
+                user_agent=user_agent,
+                locale="en-AU",
+                viewport={"width": 1440, "height": 1200},
+                extra_http_headers={
+                    "Accept-Language": "en-AU,en;q=0.9",
+                    "Upgrade-Insecure-Requests": "1",
+                },
+            )
+            page = context.new_page()
+            response = page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+            try:
+                page.wait_for_load_state("networkidle", timeout=min(timeout_ms, 15_000))
+            except PlaywrightTimeoutError:
+                pass
+            html = page.content()
+            status_code = response.status if response else None
+            context.close()
+            browser.close()
+            browser = None
+            return status_code, html, None
+    except PlaywrightTimeoutError as exc:
+        return None, None, f"browser fallback timed out: {exc}"
+    except Exception as exc:  # noqa: BLE001 - keep crawl failures in report JSON.
+        return None, None, f"browser fallback failed: {exc}"
+    finally:
+        if browser is not None:
+            try:
+                browser.close()
+            except Exception:
+                pass
+
+
+def _should_use_browser_fallback(
+    enabled: bool,
+    status_code: int | None,
+    html: str | None,
+    error_message: str | None,
+) -> bool:
+    if not enabled:
+        return False
+    if error_message:
+        return True
+    if not html:
+        return True
+    return status_code in {401, 403, 429}
+
+
 def crawl(config: dict[str, Any]) -> list[CrawledPage]:
     """Crawl the configured website and cache HTML pages to data/raw/.
 
@@ -90,6 +157,7 @@ def crawl(config: dict[str, Any]) -> list[CrawledPage]:
     user_agent = str(crawl_config.get("user_agent", "ai-search-engine-bot/0.1"))
     respect_robots = bool(crawl_config.get("respect_robots_txt", True))
     timeout_seconds = float(crawl_config.get("timeout_seconds", 10))
+    browser_fallback = bool(crawl_config.get("browser_fallback", False))
 
     raw_dir = Path("data/raw")
     raw_dir.mkdir(parents=True, exist_ok=True)
@@ -106,11 +174,20 @@ def crawl(config: dict[str, Any]) -> list[CrawledPage]:
             robots_parser = None
 
     session = requests.Session()
-    session.headers.update({"User-Agent": user_agent})
+    session.headers.update(
+        {
+            "User-Agent": user_agent,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-AU,en;q=0.9",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+        }
+    )
 
     queue: list[tuple[str, int]] = [(_normalize_url(url, base_url), 0) for url in seed_urls]
     visited: set[str] = set()
     results: list[CrawledPage] = []
+    seed_resolved = False  # adopt the seed's redirect-resolved host (apex -> www) once
 
     while queue and len(results) < max_pages:
         url, depth = queue.pop(0)
@@ -125,27 +202,52 @@ def crawl(config: dict[str, Any]) -> list[CrawledPage]:
         status_code = None
         html = None
         error_message = None
+        # requests follows http->https and apex<->www redirects by default; track where we
+        # actually landed so links resolve against (and stay within) the FINAL host.
+        final_url = url
 
         try:
             response = session.get(url, timeout=timeout_seconds)
+            final_url = response.url or url
             status_code = response.status_code
+            response.encoding = response.apparent_encoding
             if response.ok:
                 # requests defaults to ISO-8859-1 when no charset header is present;
                 # apparent_encoding (chardet) detects the actual encoding from the bytes.
-                response.encoding = response.apparent_encoding
                 html = response.text
-                filename = _filesystem_safe_filename(url)
-                cache_path = raw_dir / filename
-                cache_path.write_text(html, encoding="utf-8")
+                _cache_html(raw_dir, url, html)
             else:
+                html = response.text
                 error_message = f"HTTP {status_code}"
         except requests.RequestException as exc:
             error_message = str(exc)
 
+        if _should_use_browser_fallback(browser_fallback, status_code, html, error_message):
+            browser_status, browser_html, browser_error = _fetch_with_browser(url, timeout_seconds, user_agent)
+            if browser_html and browser_status and 200 <= browser_status < 300:
+                status_code = browser_status
+                html = browser_html
+                error_message = None
+                _cache_html(raw_dir, url, html)
+            elif browser_html:
+                status_code = browser_status
+                html = browser_html
+                error_message = f"HTTP {browser_status}" if browser_status else error_message
+            elif browser_error and not html:
+                error_message = f"{error_message}; {browser_error}" if error_message else browser_error
+
         results.append(CrawledPage(url=url, status_code=status_code, html=html, error=error_message))
 
-        if html and depth < max_depth:
-            for link in _extract_links(html, base_url):
+        # If the seed redirected to a different host (apex -> www, http -> https), adopt the
+        # resolved host so same-domain link discovery follows the real site.
+        if html and not error_message and not seed_resolved:
+            resolved_netloc = urlparse(final_url).netloc
+            if resolved_netloc:
+                base_netloc = resolved_netloc
+            seed_resolved = True
+
+        if html and not error_message and depth < max_depth:
+            for link in _extract_links(html, final_url):
                 if len(results) + len(queue) >= max_pages:
                     break
                 if link in visited:

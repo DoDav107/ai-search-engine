@@ -27,7 +27,7 @@ export async function GET() {
     });
   } catch {
     return new Response(
-      "PDF not found — run `python -m src.pipeline` (or `python -m src.reporting.pdf_report`) to generate it.",
+      "PDF not found — run an audit from the dashboard to generate it.",
       { status: 404, headers: { "Content-Type": "text/plain" } }
     );
   }

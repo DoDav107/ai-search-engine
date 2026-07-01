@@ -1,0 +1,114 @@
+{
+  "jobId": "2d693e26-42b0-497e-93d6-babc54e0a7d0",
+  "status": "done",
+  "client": "Nandos",
+  "brand": "Nandos",
+  "domain": "https://www.nandos.com.au/?gad_source=1&gad_campaignid=15266111268&gbraid=0AAAAAoQuyQFUoyYM_zxo5w-kkGNb-XWJI&gclid=Cj0KCQjwo_PRBhDNARIsAEcVALWKjh-Ae8_ZoeNlFPtLvmdo7AXUdnk8CppUOrM-PqqbRagMfNVktTQaAoDvEALw_wcB",
+  "queries": [
+    "Best peri-peri chicken restaurants in Australia?",
+    "Where can I get good grilled chicken for lunch?",
+    "What is the best peri-peri chicken chain?",
+    "Best takeaway chicken restaurants near me?",
+    "Best chicken restaurants in Perth?"
+  ],
+  "geo_provider": "openai",
+  "geo_model": "gpt-5.5",
+  "api_key_source": "env",
+  "startedAt": "2026-06-26T14:00:40.281Z",
+  "updatedAt": "2026-06-26T14:03:48.690Z",
+  "events": [
+    {
+      "phase": "queued",
+      "message": "Preparing pipeline config."
+    },
+    {
+      "phase": "start",
+      "message": "Launching Python pipeline."
+    },
+    {
+      "phase": "crawl",
+      "message": "Crawling site and scoring SEO factors…"
+    },
+    {
+      "phase": "crawl_done",
+      "message": "Scored 6 page(s).",
+      "pages": 6
+    },
+    {
+      "phase": "geo_start",
+      "message": "Measuring GEO brand visibility…",
+      "total": 5
+    },
+    {
+      "phase": "geo",
+      "index": 1,
+      "total": 5,
+      "query": "Best peri-peri chicken restaurants in Australia?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 2,
+      "total": 5,
+      "query": "Where can I get good grilled chicken for lunch?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 3,
+      "total": 5,
+      "query": "What is the best peri-peri chicken chain?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 4,
+      "total": 5,
+      "query": "Best takeaway chicken restaurants near me?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": false,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 5,
+      "total": 5,
+      "query": "Best chicken restaurants in Perth?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "recommend",
+      "message": "Building recommendations and draft fixes…"
+    },
+    {
+      "phase": "saving",
+      "message": "Saving report (latest + history) and PDF…"
+    },
+    {
+      "phase": "done",
+      "message": "Audit complete.",
+      "unified_score": 58,
+      "seo_score": 61.9,
+      "geo_score": 54.1
+    }
+  ],
+  "config": {
+    "crawl": "/Users/dodav107/Desktop/Uni_Level_3/CITS3009/Eloize/ai-search-engine/data/jobs/configs/2d693e26-42b0-497e-93d6-babc54e0a7d0/crawl_config.yaml",
+    "geo": "/Users/dodav107/Desktop/Uni_Level_3/CITS3009/Eloize/ai-search-engine/data/jobs/configs/2d693e26-42b0-497e-93d6-babc54e0a7d0/geo_config.yaml"
+  },
+  "pid": 56141,
+  "finishedAt": "2026-06-26T14:03:48.690Z"
+}

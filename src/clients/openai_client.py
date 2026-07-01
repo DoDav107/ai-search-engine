@@ -179,7 +179,26 @@ class OpenAIClient:
 
         text = (getattr(response, "output_text", None) or "").strip()
         web_search_used, sources = _extract_search_metadata(response)
-        return {"text": text, "web_search_used": web_search_used, "sources": sources}
+        # Surface WHY the answer is (or isn't) here — never swallow an empty completion.
+        # A reasoning model behind the agentic web_search tool can exhaust the output-token
+        # budget on reasoning + tool calls and return empty text with status="incomplete"
+        # (incomplete_details.reason="max_output_tokens"); the caller turns that into a
+        # clear, actionable error instead of a misleading 0%.
+        finish_reason = ""
+        if not text:
+            status = getattr(response, "status", None)
+            incomplete = getattr(response, "incomplete_details", None)
+            reason = getattr(incomplete, "reason", None) if incomplete is not None else None
+            usage = getattr(response, "usage", None)
+            out_tokens = getattr(usage, "output_tokens", None) if usage is not None else None
+            parts = [str(status or "empty")]
+            if reason:
+                parts.append(f"reason={reason}")
+            if out_tokens is not None:
+                parts.append(f"output_tokens={out_tokens}")
+            finish_reason = ", ".join(parts)
+        return {"text": text, "web_search_used": web_search_used, "sources": sources,
+                "finish_reason": finish_reason}
 
 
 def _extract_search_metadata(response: Any) -> tuple[bool, list[dict[str, str]]]:

@@ -1425,12 +1425,14 @@ def _run_engine(
         locale_method = "none"
         web_search_used = False
         sources: list[dict] = []
+        finish_reason = ""
         try:
             res = client.measure(query, locale)
             answer = res.get("text", "")
             web_search_used = bool(res.get("web_search_used"))
             sources = res.get("sources") or []
             locale_method = res.get("locale_method", "none")
+            finish_reason = res.get("finish_reason", "") or ""
             if _is_empty(answer):
                 # Empty (reasoning ate the budget, or a slow web-search call returned
                 # nothing) — retry once.
@@ -1439,11 +1441,17 @@ def _run_engine(
                 web_search_used = bool(res.get("web_search_used"))
                 sources = res.get("sources") or []
                 locale_method = res.get("locale_method", locale_method)
+                finish_reason = res.get("finish_reason", "") or finish_reason
             if _is_empty(answer):
-                # Still empty: a measurement failure, NOT a genuine "brand absent".
+                # Still empty: a measurement FAILURE, NOT a genuine "brand absent". Carry the
+                # provider's finish reason so a truncated/incomplete answer is actionable
+                # (e.g. "raise web_search.max_output_tokens") instead of a silent 0%.
+                detail = f" ({finish_reason})" if finish_reason else ""
+                hint = (" — raise web_search.max_output_tokens"
+                        if "max_output_tokens" in finish_reason else "")
                 result = GeoQueryResult(
                     query=query, engine=client.provider, answer="",
-                    error="empty completion — no answer returned after retry",
+                    error=f"engine returned no answer after retry{detail}{hint}",
                     web_search_used=web_search_used, sources=sources,
                     provider=client.provider, model=client.model,
                     api_key_source=client.api_key_source,
@@ -1608,13 +1616,27 @@ def run_geo(config: dict[str, Any], progress: Callable[[dict], None] | None = No
         grounding_warning = None
         if SUPPORTS_WEB_SEARCH.get(provider) and stats["queries_run"] and stats["sources_count"] == 0:
             grounding_warning = "0 live sources returned — check grounding/config."
+        # If queries ran but EVERY one failed to return a usable answer, this is an engine
+        # ERROR, not a real 0% — mark it so the breakdown/PDF show a clear failure state
+        # rather than "brand mentioned in 0 of 0 answers". Surface a representative reason.
+        measured_rows = [r for r in engine_results if not r.error]
+        engine_error = None
+        if stats["queries_run"] and not measured_rows:
+            sample = next((r.error for r in engine_results if r.error), "no answer returned")
+            engine_error = (
+                f"{stats['queries_run']} query(ies) ran but returned no usable answer "
+                f"(e.g. {sample}). Not a real 0% — the engine produced no answers."
+            )
         engine_scores.append({
             "provider": provider, "model": model,
             **stats,
             "api_key_source": client.api_key_source,
             "grounding_warning": grounding_warning,
-            "quality": build_engine_quality(engine_results, brand, brand_aliases, quality_cfg["words"]),
-            "error": None,
+            # No usable answers → no quality signals (don't render a misleading "0 of 0"
+            # block; the engine error explains the failure instead).
+            "quality": None if engine_error else build_engine_quality(
+                engine_results, brand, brand_aliases, quality_cfg["words"]),
+            "error": engine_error,
         })
 
     # Collapse case/punctuation variants to one display per brand BEFORE aggregating,

@@ -116,7 +116,12 @@ openai:
 web_search:
   enabled: true
   reasoning_effort: "low"      # start modest; raise if answers are thin
-  max_output_tokens: 2000
+  # The web_search tool is AGENTIC: the reasoning model spends output tokens on reasoning
+  # AND multiple browse/tool round-trips before writing the final answer. 2000 was too low
+  # — the budget was exhausted mid-reasoning, so the call finished status="incomplete"
+  # (reason=max_output_tokens) with EMPTY text, which surfaced as a false 0%. Give it real
+  # headroom so a grounded answer actually comes back.
+  max_output_tokens: 6000
   timeout: 180                 # generous — web search is agentic and slow
 
 # Auto-extraction of rival brands surfaced in each AI answer. Runs a SECOND, separate

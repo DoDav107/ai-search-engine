@@ -56,6 +56,12 @@ class OpenAIClient:
         self._client = openai.OpenAI(api_key=selected_key, timeout=30, max_retries=2)
         self.call_count: int = 0
 
+    def reset_call_count(self) -> None:
+        """Zero the per-run call tally. MUST be called at the start of each audit run —
+        this is a long-lived singleton, so without a reset the cap would accumulate across
+        successive in-process runs (e.g. repeated Streamlit New-Audit runs)."""
+        self.call_count = 0
+
     def chat(
         self,
         prompt: str,
@@ -240,6 +246,9 @@ class _MissingOpenAIClient:
             "OPENAI_API_KEY is not set. "
             "Copy .env.example to .env and add your key, or provide a temporary key for this audit."
         )
+
+    def reset_call_count(self) -> None:
+        """No-op — there is no client, so there is no per-run tally to reset."""
 
     def chat(self, *args: Any, **kwargs: Any) -> str:
         self._raise()

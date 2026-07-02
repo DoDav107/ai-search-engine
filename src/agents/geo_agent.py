@@ -1525,6 +1525,17 @@ def run_geo(config: dict[str, Any], progress: Callable[[dict], None] | None = No
     Backward compatible: a legacy single-engine config produces one engine, so the
     overall score and per-query behaviour match the previous implementation.
     """
+    # Reset the per-run call cap at the START of every audit run. The OpenAI client is a
+    # long-lived module singleton, so without this its call_count would carry over between
+    # successive in-process runs (e.g. repeated Streamlit New-Audit runs) and falsely trip
+    # the cap. Fresh temp-key clients start at 0 already; this covers the shared client used
+    # for measurement, competitor extraction, and the advisory calls within THIS run.
+    try:
+        from src.clients.openai_client import client as _shared_openai_client
+        _shared_openai_client.reset_call_count()
+    except Exception:  # missing key / import issue — nothing to reset, never block the run
+        pass
+
     brand = config.get("brand", "Unknown Brand")
     # Resolve each query into {text, locale}: per-query override > audit default > global.
     queries = normalize_queries(config.get("queries", []), audit_default_locale(config))

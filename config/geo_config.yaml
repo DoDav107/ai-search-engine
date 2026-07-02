@@ -100,7 +100,10 @@ openai:
   # reasoning effort so reasoning doesn't eat the answer.
   measurement_max_completion_tokens: 2000
   reasoning_effort: "low"
-  max_calls_per_run: 50
+  # Per-RUN browse-call budget (reset to 0 at the start of each run). The agentic
+  # web_search tool makes SEVERAL calls per query (~2), plus competitor extraction and the
+  # advisory — so this is a per-run budget across all of them, not a per-query limit.
+  max_calls_per_run: 150
   # The GEO advisory makes one large analytical call (assessment + four grounded
   # drafts). It needs a big token budget (smaller budgets truncate the JSON) and
   # takes longer than the 30s default request timeout, so allow more of both.

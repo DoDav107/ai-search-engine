@@ -357,6 +357,84 @@ def inject_css() -> None:
             border-color: var(--accent); background: rgba(124,92,255,0.18); transform: translateY(-2px);
         }
         .stDataFrame { border-radius: 12px; overflow: hidden; }
+
+        /* ---- Print / "Save as PDF" layout (browser print only — no on-screen change) ----
+           The score gauges + trend charts are Plotly SVGs whose on-screen pixel width can
+           overflow the A4 print area (clipping the right gauge); nothing marked its charts
+           or cards as unbreakable, so content also split across page breaks. The on-screen
+           look is a dark glassmorphism theme that relies on backdrop-blur (which doesn't
+           print). So for print we switch to a clean light theme — white page, dark text —
+           by redefining the theme CSS vars, keep charts/cards whole, and force the gauge
+           colours to print so they read whether "Background graphics" is on or off. */
+        @media print {
+            /* Flip the theme variables to a legible light print palette (cards, text, muted). */
+            :root {
+                --glass-bg: #ffffff;
+                --glass-border: #cfd3e0;
+                --ink: #16182a;
+                --muted: #5b6478;
+            }
+            /* Hide Streamlit chrome + decorative aurora so the report uses the full page. */
+            [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"],
+            [data-testid="stToolbar"], [data-testid="stHeader"], header, footer,
+            [data-testid="stStatusWidget"], [data-testid="stDecoration"],
+            [data-testid="stAppDeployButton"], #MainMenu { display: none !important; }
+            .stApp::before { display: none !important; }
+
+            html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
+                background: #ffffff !important;
+            }
+            html, body, [class*="css"], .stApp, .stMarkdown, p, span, label, div, li, td, th,
+            h1, h2, h3, h4, h5, h6 { color: #16182a !important; }
+            * { backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+                box-shadow: none !important; }
+
+            [data-testid="stAppViewContainer"], [data-testid="stMain"], .main,
+            .block-container {
+                max-width: 100% !important; width: 100% !important;
+                padding: 0.3in 0.4in !important; margin: 0 !important;
+            }
+
+            /* The three score gauges are laid out in a 3-up st.columns row on screen. Each
+               Plotly gauge renders as a FIXED-pixel SVG (no viewBox → it can't be squished
+               responsively), and at 1/3 page width that SVG is wider than its column, so the
+               right edge (title + arc) gets clipped in print. Stack ONLY the chart row for
+               print so every gauge gets the full printable width and renders un-clipped at its
+               natural size. :has() scopes this to the gauge row and leaves other rows alone. */
+            [data-testid="stHorizontalBlock"]:has(.stPlotlyChart) {
+                flex-direction: column !important; align-items: center !important;
+                gap: 0.15in !important;
+            }
+            [data-testid="stHorizontalBlock"]:has(.stPlotlyChart) [data-testid="stColumn"],
+            [data-testid="stHorizontalBlock"]:has(.stPlotlyChart) [data-testid="column"] {
+                width: 100% !important; flex: 0 0 auto !important;
+            }
+            /* Charts: allow overflow so nothing is cropped, keep them on one page, and force
+               the coloured arcs/zones + dark text to print regardless of the bg toggle. */
+            .stPlotlyChart, [data-testid="stPlotlyChart"], .js-plotly-plot, .plotly,
+            .plot-container, .svg-container {
+                overflow: visible !important;
+                break-inside: avoid !important; page-break-inside: avoid !important;
+                -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;
+            }
+            .js-plotly-plot, .js-plotly-plot .main-svg { overflow: visible !important; }
+            .js-plotly-plot .main-svg text { fill: #16182a !important; }
+
+            /* Cards for print: white with a border, and never split across a page break. */
+            .gcard, .stat, .rec, .metric-grid, [data-testid="stMetric"],
+            [data-testid="stHorizontalBlock"], [data-testid="stColumn"], [data-testid="column"] {
+                break-inside: avoid !important; page-break-inside: avoid !important;
+            }
+            .gcard, .stat, .rec {
+                background: #ffffff !important; border: 1px solid #cfd3e0 !important;
+                -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;
+            }
+            /* Coloured badges/pills stay coloured in print (they carry meaning). */
+            .badge, .pill, .area-tag {
+                -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;
+            }
+            [data-testid="stHorizontalBlock"] { overflow: visible !important; }
+        }
         </style>
         """,
         unsafe_allow_html=True,

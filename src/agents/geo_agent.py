@@ -622,42 +622,65 @@ def _norm_key(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", _fold_text(name))
 
 
-def _compact_with_positions(text: str) -> tuple[str, list[int]]:
-    """Return a compact normalized string plus original-position map."""
+def _fold_with_positions(text: str) -> tuple[str, list[int]]:
+    """Case/accent-fold the text while PRESERVING separators, with a folded→original
+    position map. Unlike a squashed key, whitespace/punctuation is kept so word boundaries
+    survive: letters fold to ascii lowercase, combining marks drop, separators stay."""
     chars: list[str] = []
     positions: list[int] = []
     for pos, char in enumerate(text or ""):
         for folded in _fold_text(char):
-            if folded.isalnum() and folded.isascii():
-                chars.append(folded)
-                positions.append(pos)
+            chars.append(folded)
+            positions.append(pos)
     return "".join(chars), positions
 
 
 def _alias_keys(brand: str, aliases: list[str] | None = None) -> list[str]:
+    """Folded brand/alias strings to match, de-duplicated by normalized key (so 'Nike' and
+    'nike' collapse to one). Returns the FOLDED form (separators kept); the matcher builds a
+    word-boundary token pattern from each."""
     seen: set[str] = set()
-    keys: list[str] = []
+    out: list[str] = []
     for value in [brand, *(aliases or [])]:
-        key = _norm_key(value)
-        if key and key not in seen:
-            seen.add(key)
-            keys.append(key)
-    return keys
+        norm = _norm_key(value)
+        if norm and norm not in seen:
+            seen.add(norm)
+            out.append(_fold_text(value))
+    return out
+
+
+_BRAND_PATTERNS: dict[str, "re.Pattern[str]"] = {}
+
+
+def _brand_pattern(alias_folded: str) -> "re.Pattern[str] | None":
+    """Compiled WORD-BOUNDARY matcher for one folded alias. The alias's alnum tokens must
+    appear in order, separated only by non-alnum characters — so 'Air Jordan' matches
+    'air jordan', 'airjordan' or 'air-jordan' — and the whole match is \\b-anchored, so a
+    brand name embedded in a longer word ('richaffic', 'chafficient') is rejected."""
+    cached = _BRAND_PATTERNS.get(alias_folded)
+    if cached is not None:
+        return cached
+    tokens = re.findall(r"[a-z0-9]+", alias_folded)
+    if not tokens:
+        return None
+    pattern = re.compile(r"\b" + r"[^a-z0-9]*".join(re.escape(t) for t in tokens) + r"\b")
+    _BRAND_PATTERNS[alias_folded] = pattern
+    return pattern
 
 
 def _find_brand_mentions(answer: str, aliases: list[str]) -> list[int]:
-    compact, positions = _compact_with_positions(answer)
+    """Original-text start positions of each brand/alias mention, matched at WORD BOUNDARIES
+    (case/accent-insensitive, tolerant of the brand's own internal separators). Returns
+    sorted unique positions — the same contract feeding count / first_position / prominence."""
+    folded, positions = _fold_with_positions(answer)
     hits: list[int] = []
-    for key in aliases:
-        if not key:
+    for alias in aliases:
+        pattern = _brand_pattern(alias)
+        if pattern is None:
             continue
-        start = 0
-        while True:
-            idx = compact.find(key, start)
-            if idx < 0:
-                break
-            hits.append(positions[idx] if idx < len(positions) else idx)
-            start = idx + max(len(key), 1)
+        for match in pattern.finditer(folded):
+            start = match.start()
+            hits.append(positions[start] if start < len(positions) else start)
     return sorted(set(hits))
 
 

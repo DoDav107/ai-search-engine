@@ -55,8 +55,7 @@ function ScoreBar({ score }: { score: number }) {
         className="h-full rounded-full"
         style={{ backgroundColor: color }}
         initial={{ width: reduce ? `${score}%` : 0 }}
-        whileInView={{ width: `${score}%` }}
-        viewport={{ once: true }}
+        animate={{ width: `${score}%` }}
         transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
       />
     </div>

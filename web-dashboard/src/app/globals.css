@@ -184,3 +184,92 @@
 .text-glow {
   text-shadow: 0 0 18px var(--glow, rgba(59, 130, 246, 0.45));
 }
+
+/* ---------- Print / Save as PDF (browser print of the ACTIVE report tab) ----------
+   Lightweight, per-tab convenience fired by the Print button (window.print()). Inactive
+   tab panels are display:none (see TabsContent), so ONLY the active tab prints. These
+   rules flip the dark glass UI to a legible light page, hide the app chrome/controls,
+   keep cards and charts from splitting across pages, and let recharts scale to the page
+   width. The pipeline-built full PDF at /api/report/pdf is untouched (kept alongside). */
+@media print {
+  /* Legible light palette — the on-screen dark theme washes out on paper. */
+  :root,
+  .dark {
+    --background: #ffffff;
+    --foreground: #0f172a;
+    --card: #ffffff;
+    --card-foreground: #0f172a;
+    --popover: #ffffff;
+    --popover-foreground: #0f172a;
+    --muted-foreground: #475569;
+    --border: rgba(15, 23, 42, 0.15);
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+  }
+
+  /* Un-hide framer-motion reveals (whileInView leaves off-screen content at opacity:0),
+     drop the glass blur/shadow/glow, and force colours to print regardless of the browser
+     "background graphics" toggle so score arcs, bars and badges stay meaningful. */
+  *,
+  *::before,
+  *::after {
+    opacity: 1 !important;
+    animation: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    border-color: rgba(15, 23, 42, 0.15) !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Gradient/clipped hero title would be invisible on white — paint it solid. */
+  [class*="text-transparent"] {
+    -webkit-text-fill-color: #0f172a !important;
+    color: #0f172a !important;
+    background: none !important;
+  }
+
+  /* Expand the active tab's panel to the full printable width. */
+  main {
+    max-width: 100% !important;
+    padding: 0.25in 0.4in !important;
+  }
+
+  /* Hide in-content controls (tab bar + Trends date/select filters). */
+  [role="tablist"],
+  input,
+  select {
+    display: none !important;
+  }
+
+  /* Keep cards and charts whole across page breaks (same rule as the dashboard fix). */
+  [class*="rounded-3xl"],
+  [class*="rounded-2xl"],
+  .recharts-responsive-container,
+  .recharts-wrapper {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* Recharts bakes the on-screen pixel width into the wrapper + SVG, and under print media
+     its internal ResizeObserver collapses the sizing <div> between the container and the
+     wrapper to width:0 — blanking the chart. Force that inner div back to full width, cap
+     the wrapper so the baked-in pixel width can't overflow the page, and let the surface's
+     viewBox scale the whole chart down to fit — no blanking, no clipping, no squish. */
+  .recharts-responsive-container > div {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+  .recharts-wrapper {
+    max-width: 100% !important;
+  }
+  .recharts-surface {
+    width: 100% !important;
+    height: 100% !important;
+  }
+}

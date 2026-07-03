@@ -4,7 +4,7 @@ export function AuroraBackground() {
   return (
     <div
       aria-hidden
-      className="pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-background"
+      className="pointer-events-none fixed inset-0 -z-10 overflow-hidden bg-background print:hidden"
     >
       {/* base radial wash */}
       <div className="absolute inset-0 bg-[radial-gradient(125%_125%_at_50%_-10%,#0e1730_0%,#070a12_55%)]" />

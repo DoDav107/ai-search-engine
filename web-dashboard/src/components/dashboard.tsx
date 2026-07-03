@@ -9,6 +9,7 @@ import { GeoSection } from "./geo-section";
 import { RecommendationsSection } from "./recommendations-section";
 import { TrendsSection } from "./trends-section";
 import { ExportButton } from "./export-button";
+import { PrintButton } from "./print-button";
 import { NewAudit } from "./new-audit";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { GLASS, type Report } from "@/lib/report";
@@ -74,7 +75,7 @@ export function Dashboard() {
   return (
     <main className="mx-auto w-full max-w-6xl px-6 py-12 sm:py-16">
       {/* New Audit — always available, even before any report exists. */}
-      <div className="mb-8 flex justify-end">
+      <div className="mb-8 flex justify-end print:hidden">
         <NewAudit onComplete={loadReport} />
       </div>
 
@@ -138,13 +139,14 @@ export function Dashboard() {
                 </p>
               )}
               <ExportButton report={report} />
+              <PrintButton />
             </motion.div>
           </motion.header>
 
           {/* Tabbed report — same data (fetched once), grouped so users don't scroll
               through everything. Tab selection persists across re-runs (state above). */}
           <Tabs value={tab} onValueChange={setTab}>
-            <TabsList className="mb-8">
+            <TabsList className="mb-8 print:hidden">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="seo">SEO</TabsTrigger>
               <TabsTrigger value="geo">GEO</TabsTrigger>

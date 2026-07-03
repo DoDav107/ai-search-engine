@@ -27,7 +27,7 @@ export function ExportButton({ report }: { report: Report }) {
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 print:hidden">
       <button type="button" onClick={handleExport} className={BTN}>
         <Download className="h-4 w-4" aria-hidden />
         Export JSON

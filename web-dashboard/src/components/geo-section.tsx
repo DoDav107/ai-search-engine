@@ -146,8 +146,7 @@ function ProminenceBar({ value }: { value: number }) {
           className="h-full rounded-full"
           style={{ backgroundColor: "var(--color-brand)" }}
           initial={{ width: reduce ? `${value}%` : 0 }}
-          whileInView={{ width: `${value}%` }}
-          viewport={{ once: true }}
+          animate={{ width: `${value}%` }}
           transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
         />
       </div>
@@ -591,8 +590,7 @@ export function GeoSection({ report, showAssessment = true }: { report: Report; 
                             : "rgba(148,163,184,0.55)",
                         }}
                         initial={{ width: reduce ? `${pct}%` : 0 }}
-                        whileInView={{ width: `${pct}%` }}
-                        viewport={{ once: true }}
+                        animate={{ width: `${pct}%` }}
                         transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
                       />
                     </div>

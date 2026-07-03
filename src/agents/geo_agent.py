@@ -70,20 +70,28 @@ UI_SELECTABLE: dict[str, bool] = {
 PROVIDER_ORDER: list[str] = ["openai", "anthropic", "google", "deepseek", "xai", "perplexity", "mock"]
 
 
-def build_catalog(config: dict[str, Any]) -> dict[str, Any]:
+def build_catalog(config: dict[str, Any], discover: bool = False) -> dict[str, Any]:
     """Single source of truth for the provider→models catalog used by BOTH dashboards.
 
-    Models are derived from ``config['engines']`` — the exact provider+model strings the
-    engine factory (:func:`create_engine_client`) runs — so the New Audit forms,
-    geo_config.yaml, the pipeline, and the results can never drift. The per-engine
-    ``enabled`` flag is intentionally ignored: it gates a batch run, not what a user may
-    pick. Provider metadata (label, API-key env var, ui_selectable, grounding) comes from
-    the maps above. Mock is included with ``ui_selectable=False`` so it stays runnable from
-    config/CLI while the forms filter it out.
+    The provider SET comes from ``config['engines']`` (incl. mock). Per-provider model
+    lists come from ``config/models.yaml`` (the curated catalogue) resolved through
+    :mod:`src.agents.model_discovery`:
+
+    * ``discover=True`` (the New Audit forms, via ``geo_options``/the Next route) —
+      for a provider with ``live_fetch: true`` and a configured API key, the dropdown is
+      populated LIVE from the provider's list-models API (filtered to GEO-usable chat
+      models, newest first, disk-cached). On any failure it falls back silently to the
+      curated list and carries a ``note``. Live-discovered models not in the config's
+      ``grounding_verified`` are labelled "(unverified for GEO)".
+    * ``discover=False`` (runtime resolution, CLI) — pure config; no network. The per-
+      engine ``enabled`` flag is intentionally ignored: it gates a batch run, not the pick
+      list. Provider metadata (label, env var, ui_selectable, grounding) comes from the
+      maps above; mock is ``ui_selectable=False`` so it stays runnable from config/CLI
+      while the forms filter it out.
 
     Returns ``{default_provider, default_model, providers}`` where each provider carries
-    ``{label, env_key_name, ui_selectable, web_grounded, models:[{id,label}]}``. Defaults
-    always land on a UI-selectable provider so a form never defaults to mock.
+    ``{label, env_key_name, ui_selectable, web_grounded, live_fetch, source, note,
+    models:[{id,label,grounding}]}``. Defaults always land on a UI-selectable provider.
 
     Model strings are CONFIG — verify each against the provider's current models page:
       OpenAI     https://platform.openai.com/docs/models
@@ -93,6 +101,10 @@ def build_catalog(config: dict[str, Any]) -> dict[str, Any]:
       xAI        https://docs.x.ai/docs/models
       Perplexity https://docs.perplexity.ai/getting-started/models
     """
+    import os
+
+    from .model_discovery import cache_ttl_seconds, load_models_config, resolve_models
+
     by_provider: dict[str, list[str]] = {}
     engines = config.get("engines")
     if isinstance(engines, list):
@@ -107,26 +119,61 @@ def build_catalog(config: dict[str, Any]) -> dict[str, Any]:
             if model not in models:
                 models.append(model)
 
-    ordered = [p for p in PROVIDER_ORDER if p in by_provider]
-    ordered += [p for p in by_provider if p not in ordered]
+    models_config = load_models_config()
+    mcfg_providers = models_config.get("providers") if isinstance(models_config.get("providers"), dict) else {}
+    ttl_seconds = cache_ttl_seconds(models_config)
+
+    # models.yaml may name a provider the engines list doesn't (pure pick-list entry).
+    all_provider_ids = list(by_provider) + [p for p in mcfg_providers if p not in by_provider]
+    ordered = [p for p in PROVIDER_ORDER if p in all_provider_ids]
+    ordered += [p for p in all_provider_ids if p not in ordered]
 
     providers: dict[str, Any] = {}
     for provider in ordered:
+        pcfg = mcfg_providers.get(provider) if isinstance(mcfg_providers.get(provider), dict) else {}
+        env_var = PROVIDER_ENV_VAR.get(provider)
+        api_key = (os.environ.get(env_var, "").strip() or None) if env_var else None
+        model_ids, source, note = resolve_models(
+            provider, pcfg, discover=discover,
+            fallback_ids=by_provider.get(provider, []),
+            ttl_seconds=ttl_seconds, api_key=api_key,
+        )
+        grounding_verified = {str(m) for m in (pcfg.get("grounding_verified") or [])}
+        prov_grounded = SUPPORTS_WEB_SEARCH.get(provider, False)
+        models_list: list[dict[str, str]] = []
+        for mid in model_ids:
+            if prov_grounded:
+                grounding = "verified" if mid in grounding_verified else "unverified"
+                suffix = "" if grounding == "verified" else "  (unverified for GEO)"
+            else:
+                grounding = "n/a"  # provider can't ground → grounding tag is meaningless
+                suffix = ""
+            models_list.append({"id": mid, "label": f"{mid}{suffix}", "grounding": grounding})
+
         providers[provider] = {
             "label": PROVIDER_LABELS.get(provider, provider),
-            "env_key_name": PROVIDER_ENV_VAR.get(provider),  # None for mock
+            "env_key_name": env_var,  # None for mock
             "ui_selectable": UI_SELECTABLE.get(provider, True),
-            "web_grounded": SUPPORTS_WEB_SEARCH.get(provider, False),
-            "models": [{"id": m, "label": m} for m in by_provider[provider]],
+            "web_grounded": prov_grounded,
+            "live_fetch": bool(pcfg.get("live_fetch", False)),
+            "source": source,          # "live" | "config"
+            "note": note,              # set only when a live fetch fell back
+            "models": models_list,
         }
 
     geo = config.get("geo") if isinstance(config.get("geo"), dict) else {}
     selectable = [p for p in ordered if providers[p]["ui_selectable"] and providers[p]["models"]]
-    default_provider = str(geo.get("default_provider") or "").strip().lower()
+    default_provider = str(models_config.get("default_provider") or geo.get("default_provider") or "").strip().lower()
     if default_provider not in selectable:
         default_provider = selectable[0] if selectable else (ordered[0] if ordered else "")
+    default_provider_cfg = mcfg_providers.get(default_provider) if isinstance(mcfg_providers.get(default_provider), dict) else {}
     default_model_ids = [m["id"] for m in providers.get(default_provider, {}).get("models", [])]
-    default_model = str(geo.get("default_model") or "").strip()
+    default_model = str(
+        default_provider_cfg.get("default_model")
+        or models_config.get("default_model")
+        or geo.get("default_model")
+        or ""
+    ).strip()
     if default_model not in default_model_ids:
         default_model = default_model_ids[0] if default_model_ids else ""
 

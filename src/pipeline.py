@@ -55,17 +55,27 @@ def _select_geo_engine(
     provider: str | None,
     model: str | None,
 ) -> tuple[str, str]:
-    """Resolve a runtime provider/model against the config-driven catalog."""
+    """Resolve a runtime provider/model against the config-driven catalog.
+
+    An EXPLICITLY chosen model is trusted verbatim (it may be a live-discovered or a manual
+    "advanced" id that isn't in the static catalogue) — the provider validates it at run
+    time, so a bogus id surfaces a clear engine error rather than being silently swapped for
+    a different model. Only an EMPTY model falls back to the provider/catalog default.
+    """
     catalog = _geo_catalog(config)
     providers = catalog.get("providers") if isinstance(catalog.get("providers"), dict) else {}
     selected_provider = (provider or catalog.get("default_provider") or "openai").strip().lower()
     if selected_provider not in providers:
         raise ValueError(f"Unknown GEO provider: {selected_provider}")
 
+    selected_model = (model or "").strip()
+    if selected_model:
+        return selected_provider, selected_model
+
     provider_cfg = providers[selected_provider] or {}
     models = provider_cfg.get("models") if isinstance(provider_cfg.get("models"), list) else []
     model_ids = [str(item.get("id", "")).strip() for item in models if isinstance(item, dict)]
-    selected_model = (model or "").strip() or str(catalog.get("default_model") or "").strip()
+    selected_model = str(catalog.get("default_model") or "").strip()
     if selected_model not in model_ids:
         if model_ids:
             selected_model = model_ids[0]

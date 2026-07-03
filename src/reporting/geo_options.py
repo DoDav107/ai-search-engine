@@ -37,7 +37,9 @@ def load_geo_options(path: str = "config/geo_config.yaml") -> dict[str, Any]:
     with config_path.open("r", encoding="utf-8") as stream:
         config = yaml.safe_load(stream) or {}
 
-    catalog = build_catalog(config)
+    # discover=True: populate each live_fetch provider's dropdown from its list-models API
+    # (filtered, newest-first, disk-cached), falling back silently to the curated catalogue.
+    catalog = build_catalog(config, discover=True)
     for provider in catalog.get("providers", {}).values():
         env_key = provider.get("env_key_name")
         # No env var (mock) needs no key; otherwise report whether it's configured.

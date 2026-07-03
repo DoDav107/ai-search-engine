@@ -20,4 +20,5 @@ reports/
 
 .venv/
 data/reports/
+data/cache/
 __pycache__/

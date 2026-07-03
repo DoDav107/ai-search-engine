@@ -33,7 +33,7 @@ type JobStatus = {
   error?: string | null;
   stderr?: string | null;
 };
-type ProviderModel = { id: string; label: string };
+type ProviderModel = { id: string; label: string; grounding?: string };
 type ProviderOption = {
   label: string;
   env_key_name: string | null;
@@ -41,6 +41,11 @@ type ProviderOption = {
   ui_selectable?: boolean;
   // Whether the provider's API-key env var is configured on the server.
   key_present?: boolean;
+  // "live" (fetched from the provider) or "config" (curated fallback); note is set only
+  // when a live fetch was attempted but fell back (shown as a small non-blocking notice).
+  source?: string;
+  note?: string | null;
+  live_fetch?: boolean;
   models: ProviderModel[];
 };
 type GeoOptions = {
@@ -127,6 +132,10 @@ export function NewAudit({ onComplete }: { onComplete: () => void }) {
   const [geoOptions, setGeoOptions] = useState<GeoOptions | null>(null);
   const [geoProvider, setGeoProvider] = useState("openai");
   const [geoModel, setGeoModel] = useState("gpt-5.5");
+  // Advanced: a manually typed model id overrides the dropdown (for a brand-new id not yet
+  // surfaced). Validated on submit; the provider validates it authoritatively at run time.
+  const [useManualModel, setUseManualModel] = useState(false);
+  const [manualModel, setManualModel] = useState("");
   const [geoLocale, setGeoLocale] = useState("global");
   const [apiKeyMode, setApiKeyMode] = useState<"env" | "temporary">("env");
   const [temporaryApiKey, setTemporaryApiKey] = useState("");
@@ -151,6 +160,9 @@ export function NewAudit({ onComplete }: { onComplete: () => void }) {
   );
   const selectedProvider = providers[geoProvider];
   const models = selectedProvider?.models ?? [];
+  // The model actually submitted: the manual id when the advanced override is on, else the
+  // dropdown value. Mirrors the Streamlit form and the server-side geo_model shape guard.
+  const effectiveModel = useManualModel && manualModel.trim() ? manualModel.trim() : geoModel;
   const allowEnvKeyWrite = geoOptions?.allow_env_key_write === true;
   const needsKeyInput = apiKeyMode === "temporary";
   // "Save to .env" is an opt-in checkbox under the temporary key (only when enabled).
@@ -194,6 +206,9 @@ export function NewAudit({ onComplete }: { onComplete: () => void }) {
     setGeoProvider(provider);
     const nextModels = providers[provider]?.models ?? [];
     setGeoModel(nextModels[0]?.id ?? "");
+    // A manual model id is provider-specific — clear it so it can't carry to another provider.
+    setUseManualModel(false);
+    setManualModel("");
     // The key is always the SELECTED provider's key — clear any prior key/save intent so
     // it can't carry over to a different provider.
     setTemporaryApiKey("");
@@ -205,7 +220,10 @@ export function NewAudit({ onComplete }: { onComplete: () => void }) {
   async function handleSubmit() {
     const errs = validate(client, brand, domain, queries);
     if (!geoProvider) errs.push("Choose an AI provider.");
-    if (!geoModel) errs.push("Choose an AI model.");
+    if (!effectiveModel) errs.push("Choose an AI model, or enter a model ID.");
+    else if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/.test(effectiveModel)) {
+      errs.push("The model ID has an invalid format.");
+    }
     if (needsKeyInput && geoProvider !== "mock" && !temporaryApiKey.trim()) {
       errs.push("Enter an API key or choose the saved server key.");
     }
@@ -264,7 +282,7 @@ export function NewAudit({ onComplete }: { onComplete: () => void }) {
           domain: cleanDomain,
           queries,
           geo_provider: geoProvider,
-          geo_model: geoModel,
+          geo_model: effectiveModel,
           geo_locale: geoLocale,
           api_key_mode: useTempKey ? "temporary" : "env",
           temporary_api_key: useTempKey ? temporaryApiKey : undefined,
@@ -464,12 +482,37 @@ export function NewAudit({ onComplete }: { onComplete: () => void }) {
               <select
                 value={geoModel}
                 onChange={(e) => setGeoModel(e.target.value)}
-                className="w-full rounded-xl border border-white/10 bg-[#111827] px-3 py-2 text-sm outline-none focus:border-primary/60"
+                disabled={useManualModel}
+                className="w-full rounded-xl border border-white/10 bg-[#111827] px-3 py-2 text-sm outline-none focus:border-primary/60 disabled:opacity-50"
               >
                 {models.map((model) => (
                   <option key={model.id} value={model.id}>{model.label}</option>
                 ))}
               </select>
+              {/* Live-fetch fallback note (non-blocking) — the form still works either way. */}
+              {selectedProvider?.note && (
+                <span className="mt-1 block text-[11px] text-muted-foreground">
+                  {selectedProvider.note}
+                </span>
+              )}
+              {/* Advanced: type an exact model id (validated on submit; provider validates at run). */}
+              <label className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={useManualModel}
+                  onChange={(e) => setUseManualModel(e.target.checked)}
+                />
+                Enter model ID manually (advanced)
+              </label>
+              {useManualModel && (
+                <input
+                  value={manualModel}
+                  onChange={(e) => setManualModel(e.target.value)}
+                  placeholder="exact provider model id, e.g. gpt-5.5"
+                  autoComplete="off"
+                  className="mt-1 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 font-mono text-xs outline-none focus:border-primary/60"
+                />
+              )}
             </label>
             <label className="text-sm sm:col-span-2">
               <span className="mb-1 block text-xs font-medium text-muted-foreground">Default region</span>

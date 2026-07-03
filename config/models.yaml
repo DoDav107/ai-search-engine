@@ -1,0 +1,72 @@
+# Model catalogue for the New Audit "AI model" dropdown (BOTH dashboards, one source).
+#
+# Resolution per provider (see src/agents/model_discovery.py):
+#   live_fetch: true  -> call the provider's list-models API, HARD-FILTER to GEO-usable
+#                        chat models (allow/deny below), order newest-first, disk-cache
+#                        (settings.cache_ttl_hours). If the fetch fails/times-out/returns
+#                        nothing usable, fall back SILENTLY to `models:` and show a note.
+#   live_fetch: false -> PIN to the curated `models:` list only; no live call is made
+#                        (for demos / locked client environments / providers with no
+#                        wired list endpoint).
+#
+# This file always provides the default model and the grounding_verified flags. A live-
+# discovered model NOT in grounding_verified is surfaced as "(unverified for GEO)" so the
+# user knows web_search grounding may not work for it — we never assume every new model
+# supports the Responses API web_search tool.
+#
+# Model strings drift — confirm ids on each provider's models page (linked in geo_agent).
+
+settings:
+  # Disk-cache TTL for live-fetched lists (per provider). Short enough that new models
+  # show within a work session; long enough that we don't re-hit the API every form open.
+  cache_ttl_hours: 6
+
+default_provider: openai
+default_model: gpt-5.5
+
+providers:
+  # -- OpenAI: LIVE by default (real SDK + /models endpoint wired) -------------------
+  openai:
+    live_fetch: true
+    default_model: gpt-5.5
+    # Keep only chat/answers families. allow = must match ONE; deny = must match NONE.
+    allow: ["^gpt-", "^o[0-9]", "^chatgpt-"]
+    deny: ["embedding", "embed", "audio", "tts", "whisper", "transcribe", "realtime",
+           "image", "dall-e", "moderation", "search", "computer-use",
+           "instruct", "babbage", "davinci", "curie", "ada", "^ft:", ":ft"]
+    # Models WE have verified for GEO web_search grounding; others -> "(unverified for GEO)".
+    grounding_verified: ["gpt-5.5", "gpt-5.2", "gpt-4o", "gpt-4.1"]
+    # Curated fallback (used only when live fetch is off/unavailable).
+    models: ["gpt-5.5", "gpt-5.2", "gpt-4o"]
+
+  # -- Providers below: curated/pinned (no list endpoint wired here yet) -------------
+  anthropic:
+    live_fetch: false
+    default_model: claude-opus-4-8
+    grounding_verified: ["claude-opus-4-8", "claude-sonnet-4-6"]
+    models: ["claude-opus-4-8", "claude-sonnet-4-6"]
+
+  google:
+    live_fetch: false
+    default_model: gemini-3-pro
+    grounding_verified: ["gemini-3-pro", "gemini-2.5-flash"]
+    models: ["gemini-3-pro", "gemini-2.5-flash"]
+
+  deepseek:
+    live_fetch: false
+    default_model: deepseek-chat
+    # DeepSeek is ungrounded (no web search), so grounding is N/A — no "unverified" tag.
+    grounding_verified: []
+    models: ["deepseek-chat", "deepseek-reasoner"]
+
+  xai:
+    live_fetch: false
+    default_model: grok-4
+    grounding_verified: ["grok-4", "grok-3"]
+    models: ["grok-4", "grok-3"]
+
+  perplexity:
+    live_fetch: false
+    default_model: sonar
+    grounding_verified: ["sonar", "sonar-pro"]
+    models: ["sonar", "sonar-pro"]

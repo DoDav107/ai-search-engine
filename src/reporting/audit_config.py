@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,11 @@ def _validate(params: dict[str, Any]) -> tuple[str, str, str, list[str], str | N
     queries = [str(q).strip() for q in (params.get("queries") or []) if str(q).strip()]
     geo_provider = str(params.get("geo_provider") or "").strip().lower() or None
     geo_model = str(params.get("geo_model") or "").strip() or None
+    # Guard the model id shape (covers the advanced "manual model id" entry) before a run.
+    # The provider still validates it authoritatively at run time; this just rejects
+    # obviously malformed input early with a clear message.
+    if geo_model and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:\-]{0,99}", geo_model):
+        errors.append("geo_model has an invalid format")
     geo_locale = str(params.get("geo_locale") or "").strip() or None
     api_key_mode = str(params.get("api_key_mode") or "env").strip().lower()
 

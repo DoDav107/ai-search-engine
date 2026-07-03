@@ -667,6 +667,21 @@ with st.sidebar:
             format_func=lambda mid: _model_labels.get(mid, mid),
             key=f"na_geo_model_{na_provider}",
         )
+        # Models are fetched LIVE from the provider by default; on a fetch failure the list
+        # falls back to the saved catalogue and this non-blocking note explains why.
+        _model_note = str((_providers.get(na_provider) or {}).get("note") or "").strip()
+        if _model_note:
+            st.caption(f"ℹ️ {_model_note}")
+        # Advanced: a manual model id overrides the dropdown (last resort for a brand-new id
+        # not yet surfaced). The provider validates it at run time; a bogus id fails loudly.
+        _use_manual = st.checkbox("Enter model ID manually (advanced)", key="na_manual_model_toggle")
+        if _use_manual:
+            _manual_model = st.text_input(
+                "Model ID", value="", key=f"na_manual_model_{na_provider}",
+                placeholder="exact provider model id, e.g. gpt-5.5",
+            ).strip()
+            if _manual_model:
+                na_model = _manual_model
         # Audit-level default region (per-query overrides come from config).
         _locale_codes = [code for code, _ in LOCALE_OPTIONS]
         _locale_labels = {code: label for code, label in LOCALE_OPTIONS}

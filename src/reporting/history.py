@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -79,6 +80,100 @@ def list_clients(reports_dir: Path | None = None) -> list[str]:
     if not base.exists():
         return []
     return sorted(p.name for p in base.iterdir() if p.is_dir())
+
+
+def _repoint_latest_if_owned(base: Path, deleted_slug: str) -> str | None:
+    """If ``latest_report.json`` belongs to the deleted client, repoint or clear it.
+
+    Repoints to the most recent run of any REMAINING client (the history payload has the
+    same shape as latest_report.json), else clears it for an empty state. The stale
+    ``latest_report.pdf`` is removed either way (a future run regenerates it) so a mismatched
+    PDF is never served. Returns the slug repointed to, or None (cleared / not owned).
+    """
+    latest = base / "latest_report.json"
+    pdf = base / "latest_report.pdf"
+    if not latest.exists():
+        return None
+    try:
+        payload = json.loads(latest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    owner = slugify(str(payload.get("client") or payload.get("brand") or ""))
+    if owner != deleted_slug:
+        return None  # latest belongs to a different client — leave it untouched
+
+    # Newest remaining run across all remaining clients (by parsed run timestamp).
+    best: tuple[datetime, Path, str] | None = None
+    fallback: tuple[Path, str] | None = None
+    for client in list_clients(base):
+        files = list_reports(client, base)
+        if not files:
+            continue
+        newest_file = files[-1]
+        fallback = (newest_file, client)
+        ts = parse_timestamp(newest_file)
+        if ts is not None and (best is None or ts > best[0]):
+            best = (ts, newest_file, client)
+
+    chosen = (best[1], best[2]) if best else fallback
+    if chosen is not None:
+        latest.write_text(chosen[0].read_text(encoding="utf-8"), encoding="utf-8")
+        pdf.unlink(missing_ok=True)  # stale — belonged to the deleted client
+        return chosen[1]
+
+    # Nothing left anywhere — clear to the empty state (dashboards handle this gracefully).
+    latest.unlink(missing_ok=True)
+    pdf.unlink(missing_ok=True)
+    return None
+
+
+def delete_client(client_id: str, reports_dir: Path | None = None, soft: bool = True) -> dict[str, Any]:
+    """Remove ONE client's saved report history. The single shared delete both surfaces call.
+
+    DESTRUCTIVE, so it is guarded: ``client_id`` is validated against the enumerated client
+    list (never interpolated into a path), the resolved target must sit directly under
+    ``<reports>/history``, and only that directory is touched — never code, config, .env, or
+    other clients. ``soft=True`` (default) moves the directory to ``<reports>/.trash`` so it
+    is recoverable; ``soft=False`` hard-deletes. If the client owned ``latest_report.json``
+    it is repointed to the newest remaining run (or cleared).
+
+    Returns ``{deleted, runs_removed, soft, latest_repointed, trashed_to}``.
+    Raises ValueError for an unknown/invalid client (nothing is deleted).
+    """
+    base = reports_dir or REPORTS_DIR
+    slug = slugify(client_id)
+    if slug not in list_clients(base):
+        raise ValueError(f"Unknown client: {client_id!r}")
+
+    history_base = (base / "history").resolve()
+    target = (history_base / slug).resolve()
+    # Defense in depth: the resolved path must be a direct child of history/ (no traversal).
+    if target.parent != history_base or not target.is_dir():
+        raise ValueError(f"Refusing to delete outside the reports history: {client_id!r}")
+
+    runs_removed = len(list(target.glob("*.json")))
+    trashed_to: str | None = None
+    if soft:
+        trash = base / ".trash" / "history"
+        trash.mkdir(parents=True, exist_ok=True)
+        dest = trash / f"{slug}-{_timestamp()}"
+        counter = 1
+        while dest.exists():
+            dest = trash / f"{slug}-{_timestamp()}-{counter}"
+            counter += 1
+        shutil.move(str(target), str(dest))
+        trashed_to = str(dest)
+    else:
+        shutil.rmtree(target)
+
+    latest_repointed = _repoint_latest_if_owned(base, slug)
+    return {
+        "deleted": slug,
+        "runs_removed": runs_removed,
+        "soft": soft,
+        "latest_repointed": latest_repointed,
+        "trashed_to": trashed_to,
+    }
 
 
 def parse_timestamp(path: Path | str) -> datetime | None:

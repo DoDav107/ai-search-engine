@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowDown, ArrowUp, Minus, Info } from "lucide-react";
+import { ArrowDown, ArrowUp, Minus, Info, Trash2, Loader2, AlertTriangle } from "lucide-react";
 import {
   CartesianGrid,
   Line,
@@ -115,24 +115,40 @@ export function TrendsSection({ defaultClient }: { defaultClient?: string }) {
   const [from, setFrom] = useState<string>("");
   const [to, setTo] = useState<string>("");
   const [query, setQuery] = useState<string>("");
+  // "Remove client" confirm modal + in-flight/errored delete state.
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  // Load the client list; preselect the current report's client when present.
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/trends", { cache: "no-store" })
+  // Load the client list, selecting `preferred` (slug) when it exists, else the first
+  // remaining client (or none). Reused on mount AND after a delete so both surfaces reflect
+  // the same source and the view never points at a now-missing client.
+  const loadClients = useCallback((preferred?: string) => {
+    return fetch("/api/trends", { cache: "no-store" })
       .then((r) => r.json())
       .then((data: TrendsClients) => {
-        if (cancelled || !data.clients) return;
-        setClients(data.clients);
-        const wanted = defaultClient ? slugify(defaultClient) : "";
-        setClient(data.clients.includes(wanted) ? wanted : data.clients[0] ?? "");
+        const list = data.clients ?? [];
+        setClients(list);
+        const want = preferred && list.includes(preferred) ? preferred : "";
+        setClient(want || list[0] || "");
+        return list;
       })
-      .catch((e) => setError(String(e)))
-      .finally(() => setLoading(false));
+      .catch((e) => {
+        setError(String(e));
+        return [] as string[];
+      });
+  }, []);
+
+  // Initial load: preselect the current report's client when present.
+  useEffect(() => {
+    let cancelled = false;
+    loadClients(defaultClient ? slugify(defaultClient) : undefined).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
     return () => {
       cancelled = true;
     };
-  }, [defaultClient]);
+  }, [defaultClient, loadClients]);
 
   // Load the selected client's series. Deferred via a macrotask so the effect body
   // doesn't call setState synchronously (matches the dashboard's loadReport pattern).
@@ -190,16 +206,110 @@ export function TrendsSection({ defaultClient }: { defaultClient?: string }) {
     [filtered],
   );
 
+  // How many saved runs the confirm dialog will warn are being permanently removed.
+  const runCount = series?.runs?.length ?? 0;
+
+  async function handleDeleteClient() {
+    if (!client) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch("/api/clients/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setDeleteError(data.error ?? "Could not remove the client.");
+        return;
+      }
+      setConfirmDelete(false);
+      // The deleted client is gone from the shared source, so this picks another/none —
+      // the view never stays pointed at a now-missing client.
+      await loadClients();
+    } catch (e) {
+      setDeleteError(String(e));
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   const clientSelect = (
-    <select
-      value={client}
-      onChange={(e) => setClient(e.target.value)}
-      className="rounded-xl border border-white/10 bg-[#111827] px-3 py-2 text-sm outline-none focus:border-primary/60"
-    >
-      {clients.map((c) => (
-        <option key={c} value={c}>{c}</option>
-      ))}
-    </select>
+    <div className="flex items-center gap-2">
+      <select
+        value={client}
+        onChange={(e) => setClient(e.target.value)}
+        className="rounded-xl border border-white/10 bg-[#111827] px-3 py-2 text-sm outline-none focus:border-primary/60"
+      >
+        {clients.map((c) => (
+          <option key={c} value={c}>{c}</option>
+        ))}
+      </select>
+      <button
+        type="button"
+        onClick={() => {
+          setDeleteError(null);
+          setConfirmDelete(true);
+        }}
+        disabled={!client}
+        title="Remove this client"
+        aria-label="Remove this client"
+        className="inline-flex items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] p-2 text-muted-foreground transition-colors hover:border-danger/40 hover:text-danger disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <Trash2 className="h-4 w-4" aria-hidden />
+      </button>
+
+      {/* Mandatory confirmation — no one-click destructive delete. */}
+      {confirmDelete && client && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Confirm remove client"
+          onClick={() => !deleting && setConfirmDelete(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0d1320] p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center gap-2 text-danger">
+              <AlertTriangle className="h-5 w-5" aria-hidden />
+              <h3 className="text-base font-semibold">Remove client</h3>
+            </div>
+            <p className="text-sm text-foreground/85">
+              Permanently remove <span className="font-mono font-semibold">{client}</span> and its{" "}
+              <span className="font-semibold">{runCount}</span> saved run{runCount === 1 ? "" : "s"}?
+              This deletes that client&apos;s report history from disk and cannot be undone from here.
+            </p>
+            {deleteError && (
+              <p className="mt-3 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
+                {deleteError}
+              </p>
+            )}
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(false)}
+                disabled={deleting}
+                className="rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-2 text-sm font-medium text-foreground transition-colors hover:bg-white/[0.08] disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteClient}
+                disabled={deleting}
+                className="inline-flex items-center gap-2 rounded-xl border border-danger/40 bg-danger/15 px-3.5 py-2 text-sm font-medium text-danger transition-colors hover:bg-danger/25 disabled:opacity-50"
+              >
+                {deleting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Trash2 className="h-4 w-4" aria-hidden />}
+                {deleting ? "Removing…" : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 
   if (!loading && clients.length === 0) {

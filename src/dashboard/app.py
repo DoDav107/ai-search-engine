@@ -1110,6 +1110,34 @@ def _add_noise_bands(fig: go.Figure, xs: list, low_conf: list[bool]) -> None:
             )
 
 
+@st.dialog("Remove client")
+def _confirm_remove_client(client_slug: str, run_count: int) -> None:
+    """Mandatory confirmation before the destructive, shared delete_client action."""
+    from src.reporting import history as _hist
+
+    st.warning(
+        f"Permanently remove **{client_slug}** and its **{run_count}** saved "
+        f"run{'' if run_count == 1 else 's'}? This deletes that client's report history "
+        "from disk (moved to `.trash/`) and cannot be undone from here."
+    )
+    cancel_col, delete_col = st.columns(2)
+    if cancel_col.button("Cancel", key="trend_del_cancel", width="stretch"):
+        st.rerun()
+    if delete_col.button("Delete", key="trend_del_confirm", type="primary", width="stretch"):
+        try:
+            result = _hist.delete_client(client_slug)  # same shared action as the Next.js route
+        except ValueError as exc:
+            st.error(str(exc))
+            return
+        # Drop stale selection/range so the selector re-defaults to a remaining client.
+        for key in ("trend_client", "trend_range", "trend_query"):
+            st.session_state.pop(key, None)
+        repointed = result.get("latest_repointed")
+        note = f" · latest report repointed to {repointed}" if repointed else ""
+        st.success(f"Removed {result['deleted']} ({result['runs_removed']} run(s)){note}.")
+        st.rerun()
+
+
 def _render_trends(default_brand: str) -> None:
     from src.reporting import history as _hist
     from src.reporting.trends import low_confidence_flags, min_interval_hours
@@ -1124,6 +1152,10 @@ def _render_trends(default_brand: str) -> None:
     idx = clients.index(default_slug) if default_slug in clients else 0
     pick_col, range_col = st.columns([1, 2])
     client = pick_col.selectbox("Client", clients, index=idx, key="trend_client")
+    # Destructive "Remove client" affordance next to the selector (confirm dialog gates it).
+    if pick_col.button("🗑 Remove client", key="trend_remove_btn",
+                       help="Delete this client's saved report history"):
+        _confirm_remove_client(client, len(_hist.list_reports(client)))
 
     runs = [(ts, p) for ts, p in _hist.load_reports(client) if ts is not None]
     if len(runs) < 2:

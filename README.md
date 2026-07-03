@@ -189,6 +189,41 @@ seo_weight: 0.5
 geo_weight: 0.5
 ```
 
+### Keeping AI models up to date
+
+**Where the list lives:** `config/models.yaml`. This one file is the single source of truth for the "AI model" dropdown on **both** the Streamlit dashboard and the Next.js web form — edit it once and both surfaces update.
+
+**How to add or update a model (the common case) — a one-line edit, no code change, no redeploy.** Under `providers:`, each provider has a `models:` list. Every entry maps a consumer-facing `label` (what the user sees, e.g. `"GPT-5.5"`) to the provider's real `api_id` (the id actually sent to the API), plus:
+
+- `grounding: true`/`false` — whether the model answers with live web search, which GEO relies on. Models with `grounding: false` are shown in the dropdown marked `(no GEO grounding)`.
+- `default: true` — optional; marks the flagship that is pre-selected for that provider (one per provider).
+
+```yaml
+providers:
+  openai:
+    models:
+      - { label: "GPT-5.5", api_id: "gpt-5.5", grounding: true, default: true }
+      - { label: "GPT-4o",  api_id: "gpt-4o",  grounding: true }
+```
+
+**Worked example — a provider retires a model and ships a new one (GPT-5.5 → GPT-6):** open `config/models.yaml`, find the `openai:` section, add the new line and drop (or keep) the old one, then save. Done — no restart or code change needed.
+
+```yaml
+  openai:
+    models:
+      - { label: "GPT-6",   api_id: "gpt-6",   grounding: true, default: true }   # new flagship
+      # - { label: "GPT-5.5", api_id: "gpt-5.5", grounding: true }                # old line, removed
+```
+
+**How you'll know a model is retired:** if an audit is run with an `api_id` the provider no longer accepts, the tool fails with a clear message — *"…rejected the model id '…' — it may be retired or renamed. Update config/models.yaml with the current api_id for this model."* — instead of a silent 0%. A failing model is self-explaining: just update its `api_id` in this file.
+
+**All providers use the same file.** OpenAI, Gemini (`google:`), Anthropic, xAI, Perplexity, etc. are each just another section under `providers:`, updated the same one-line way.
+
+**⚠️ Adding a model vs. adding a provider — not the same job:**
+
+- **Add or update a MODEL for a provider that's already wired in** → a one-line edit to `config/models.yaml`. That's it.
+- **Add a brand-new PROVIDER that isn't wired in yet** → *not* just a config edit. It first requires building that provider's API client/integration **in code**, and only then listing its models here. Config alone will not make a new provider work.
+
 ---
 
 ## 4. Project Structure

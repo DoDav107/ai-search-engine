@@ -1,0 +1,105 @@
+engine: live
+brand: Eloize
+brand_aliases:
+- Eloize
+competitors: []
+geo:
+  default_provider: openai
+  default_model: gpt-5.5
+engines:
+- provider: openai
+  model: gpt-5.5
+  enabled: true
+queries:
+- Best AI automation companies in Australia?
+- AI workflow automation consultants in Australia?
+- Who helps Australian businesses automate admin work with AI?
+- Best AI growth partners for Australian small businesses?
+- Australian companies that build AI business assistants?
+- Best AI consultants for operational workflows in Australia?
+- Who can help Australian companies improve productivity with AI?
+- Best AI automation agency for small businesses in Australia?
+openai:
+  mode: live
+  model: gpt-5.5
+  max_completion_tokens: 500
+  measurement_max_completion_tokens: 2000
+  reasoning_effort: low
+  max_calls_per_run: 50
+  advisory_max_completion_tokens: 3500
+  advisory_timeout: 120
+web_search:
+  enabled: true
+  reasoning_effort: low
+  max_output_tokens: 6000
+  timeout: 180
+competitor_extraction:
+  enabled: true
+  model: gpt-4o-mini
+  max_completion_tokens: 300
+scoring:
+  visibility_weight: 0.35
+  prominence_weight: 0.2
+  sentiment_weight: 0.15
+  recommendation_weight: 0.15
+  citation_weight: 0.1
+  accuracy_weight: 0.05
+  neutral_accuracy_value: 0.5
+  accuracy_keywords: []
+  sentiment:
+    positive:
+    - recommended
+    - recommend
+    - good choice
+    - great choice
+    - leading
+    - best
+    - top
+    - trusted
+    - specialist
+    - popular
+    - reliable
+    - excellent
+    - ideal
+    - favorite
+    - favourite
+    - go-to
+    - preferred
+    - strong option
+    - industry leader
+    negative:
+    - limited
+    - unknown
+    - not well-known
+    - not well known
+    - less established
+    - lesser-known
+    - lesser known
+    - poor
+    - weak
+    - obscure
+    - unproven
+    - outdated
+    - lacking
+    - niche
+    recommend:
+    - best
+    - top
+    - leading
+    - recommended
+    - recommend
+    - top choice
+    - ideal
+    - go-to
+    - number one
+    - most popular
+client: Eloize
+audit_settings:
+  client: Eloize
+  brand: Eloize
+  domain: https://eloize.io/
+  geo_provider: openai
+  geo_model: gpt-5.5
+  geo_locale: global
+  api_key_source: env
+  queries_count: 8

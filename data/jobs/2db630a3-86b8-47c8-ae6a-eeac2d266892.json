@@ -1,0 +1,147 @@
+{
+  "jobId": "2db630a3-86b8-47c8-ae6a-eeac2d266892",
+  "status": "done",
+  "client": "Eloize",
+  "brand": "Eloize",
+  "domain": "https://eloize.io/",
+  "queries": [
+    "Best AI automation companies in Australia?",
+    "AI workflow automation consultants in Australia?",
+    "Who helps Australian businesses automate admin work with AI?",
+    "Best AI growth partners for Australian small businesses?",
+    "Australian companies that build AI business assistants?",
+    "Best AI consultants for operational workflows in Australia?",
+    "Who can help Australian companies improve productivity with AI?",
+    "Best AI automation agency for small businesses in Australia?"
+  ],
+  "geo_provider": "openai",
+  "geo_model": "gpt-5.5",
+  "api_key_source": "env",
+  "startedAt": "2026-07-02T11:38:32.738Z",
+  "updatedAt": "2026-07-02T11:44:58.504Z",
+  "events": [
+    {
+      "phase": "queued",
+      "message": "Preparing pipeline config."
+    },
+    {
+      "phase": "start",
+      "message": "Launching Python pipeline."
+    },
+    {
+      "phase": "crawl",
+      "message": "Crawling site and scoring SEO factors…"
+    },
+    {
+      "phase": "crawl_done",
+      "message": "Scored 4 page(s).",
+      "pages": 4
+    },
+    {
+      "phase": "geo_start",
+      "message": "Measuring GEO brand visibility…",
+      "total": 8
+    },
+    {
+      "phase": "geo",
+      "index": 1,
+      "total": 8,
+      "query": "Best AI automation companies in Australia?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 2,
+      "total": 8,
+      "query": "AI workflow automation consultants in Australia?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 3,
+      "total": 8,
+      "query": "Who helps Australian businesses automate admin work with AI?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 4,
+      "total": 8,
+      "query": "Best AI growth partners for Australian small businesses?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 5,
+      "total": 8,
+      "query": "Australian companies that build AI business assistants?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 6,
+      "total": 8,
+      "query": "Best AI consultants for operational workflows in Australia?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 7,
+      "total": 8,
+      "query": "Who can help Australian companies improve productivity with AI?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 8,
+      "total": 8,
+      "query": "Best AI automation agency for small businesses in Australia?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "recommend",
+      "message": "Building recommendations and draft fixes…"
+    },
+    {
+      "phase": "saving",
+      "message": "Saving report (latest + history) and PDF…"
+    },
+    {
+      "phase": "done",
+      "message": "Audit complete.",
+      "unified_score": 44,
+      "seo_score": 88,
+      "geo_score": 0
+    }
+  ],
+  "config": {
+    "crawl": "/Users/dodav107/Desktop/Uni_Level_3/CITS3009/Eloize/ai-search-engine/data/jobs/configs/2db630a3-86b8-47c8-ae6a-eeac2d266892/crawl_config.yaml",
+    "geo": "/Users/dodav107/Desktop/Uni_Level_3/CITS3009/Eloize/ai-search-engine/data/jobs/configs/2db630a3-86b8-47c8-ae6a-eeac2d266892/geo_config.yaml"
+  },
+  "pid": 19106,
+  "finishedAt": "2026-07-02T11:44:58.504Z"
+}

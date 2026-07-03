@@ -1,0 +1,31 @@
+site:
+  name: Eloize
+  base_url: https://eloize.io/
+  seed_urls:
+  - /
+crawl:
+  max_pages: 15
+  max_depth: 1
+  delay_seconds: 1.0
+  user_agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML,
+    like Gecko) Chrome/126.0.0.0 Safari/537.36
+  respect_robots_txt: false
+  timeout_seconds: 30.0
+  browser_fallback: true
+factors:
+- title
+- meta_description
+- h1
+- canonical
+- image_alt
+- word_count
+- structured_data
+- heading_structure
+- open_graph
+- twitter_card
+- viewport_meta
+- html_lang
+- robots_meta
+- internal_links
+- favicon
+- hreflang

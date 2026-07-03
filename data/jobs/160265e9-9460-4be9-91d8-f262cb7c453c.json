@@ -1,0 +1,169 @@
+{
+  "jobId": "160265e9-9460-4be9-91d8-f262cb7c453c",
+  "status": "done",
+  "client": "Mini Golf",
+  "brand": "Mini Golf",
+  "domain": "https://www.wanneroobotanicgardens.com.au/",
+  "queries": [
+    "Best mini golf in Perth",
+    "Mini golf near Joondalup",
+    "Mini golf near Wanneroo",
+    "Glow mini golf Perth",
+    "Outdoor mini golf Perth",
+    "Best mini golf north of the river Perth",
+    "Fun date night activities near Joondalup",
+    "Things to do in Perth at night for two people",
+    "Best night activities near Joondalup",
+    "Is Wanneroo Botanic Gardens mini golf worth it?"
+  ],
+  "geo_provider": "openai",
+  "geo_model": "gpt-5.5",
+  "api_key_source": "env",
+  "startedAt": "2026-07-03T11:55:09.016Z",
+  "updatedAt": "2026-07-03T12:00:34.692Z",
+  "events": [
+    {
+      "phase": "queued",
+      "message": "Preparing pipeline config."
+    },
+    {
+      "phase": "start",
+      "message": "Launching Python pipeline."
+    },
+    {
+      "phase": "crawl",
+      "message": "Crawling site and scoring SEO factors…"
+    },
+    {
+      "phase": "crawl_done",
+      "message": "Scored 14 page(s).",
+      "pages": 14
+    },
+    {
+      "phase": "geo_start",
+      "message": "Measuring GEO brand visibility…",
+      "total": 10
+    },
+    {
+      "phase": "geo",
+      "index": 1,
+      "total": 10,
+      "query": "Best mini golf in Perth",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 2,
+      "total": 10,
+      "query": "Mini golf near Joondalup",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 3,
+      "total": 10,
+      "query": "Mini golf near Wanneroo",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 4,
+      "total": 10,
+      "query": "Glow mini golf Perth",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 5,
+      "total": 10,
+      "query": "Outdoor mini golf Perth",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 6,
+      "total": 10,
+      "query": "Best mini golf north of the river Perth",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 7,
+      "total": 10,
+      "query": "Fun date night activities near Joondalup",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 8,
+      "total": 10,
+      "query": "Things to do in Perth at night for two people",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 9,
+      "total": 10,
+      "query": "Best night activities near Joondalup",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 10,
+      "total": 10,
+      "query": "Is Wanneroo Botanic Gardens mini golf worth it?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "recommend",
+      "message": "Building recommendations and draft fixes…"
+    },
+    {
+      "phase": "saving",
+      "message": "Saving report (latest + history) and PDF…"
+    },
+    {
+      "phase": "done",
+      "message": "Audit complete.",
+      "unified_score": 79,
+      "seo_score": 80.9,
+      "geo_score": 77
+    }
+  ],
+  "config": {
+    "crawl": "/Users/dodav107/Desktop/Uni_Level_3/CITS3009/Eloize/ai-search-engine/data/jobs/configs/160265e9-9460-4be9-91d8-f262cb7c453c/crawl_config.yaml",
+    "geo": "/Users/dodav107/Desktop/Uni_Level_3/CITS3009/Eloize/ai-search-engine/data/jobs/configs/160265e9-9460-4be9-91d8-f262cb7c453c/geo_config.yaml"
+  },
+  "pid": 14663,
+  "finishedAt": "2026-07-03T12:00:34.692Z"
+}

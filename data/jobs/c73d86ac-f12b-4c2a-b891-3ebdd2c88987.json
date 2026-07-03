@@ -1,0 +1,136 @@
+{
+  "jobId": "c73d86ac-f12b-4c2a-b891-3ebdd2c88987",
+  "status": "done",
+  "client": "Eloize",
+  "brand": "Eloize",
+  "domain": "https://eloize.io/",
+  "queries": [
+    "What is Eloize?",
+    "What does Eloize do?",
+    "Is Eloize an AI automation company?",
+    "What services does Eloize offer?",
+    "Who are Eloize's competitors?",
+    "Is Eloize good for business workflow automation?",
+    "How does Eloize help businesses grow with AI?"
+  ],
+  "geo_provider": "openai",
+  "geo_model": "gpt-5.5",
+  "api_key_source": "env",
+  "startedAt": "2026-07-02T12:25:14.280Z",
+  "updatedAt": "2026-07-02T12:29:07.309Z",
+  "events": [
+    {
+      "phase": "queued",
+      "message": "Preparing pipeline config."
+    },
+    {
+      "phase": "start",
+      "message": "Launching Python pipeline."
+    },
+    {
+      "phase": "crawl",
+      "message": "Crawling site and scoring SEO factors…"
+    },
+    {
+      "phase": "crawl_done",
+      "message": "Scored 4 page(s).",
+      "pages": 4
+    },
+    {
+      "phase": "geo_start",
+      "message": "Measuring GEO brand visibility…",
+      "total": 7
+    },
+    {
+      "phase": "geo",
+      "index": 1,
+      "total": 7,
+      "query": "What is Eloize?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 2,
+      "total": 7,
+      "query": "What does Eloize do?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 3,
+      "total": 7,
+      "query": "Is Eloize an AI automation company?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 4,
+      "total": 7,
+      "query": "What services does Eloize offer?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 5,
+      "total": 7,
+      "query": "Who are Eloize's competitors?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 6,
+      "total": 7,
+      "query": "Is Eloize good for business workflow automation?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 7,
+      "total": 7,
+      "query": "How does Eloize help businesses grow with AI?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "recommend",
+      "message": "Building recommendations and draft fixes…"
+    },
+    {
+      "phase": "saving",
+      "message": "Saving report (latest + history) and PDF…"
+    },
+    {
+      "phase": "done",
+      "message": "Audit complete.",
+      "unified_score": 88.3,
+      "seo_score": 88,
+      "geo_score": 88.7
+    }
+  ],
+  "config": {
+    "crawl": "/Users/dodav107/Desktop/Uni_Level_3/CITS3009/Eloize/ai-search-engine/data/jobs/configs/c73d86ac-f12b-4c2a-b891-3ebdd2c88987/crawl_config.yaml",
+    "geo": "/Users/dodav107/Desktop/Uni_Level_3/CITS3009/Eloize/ai-search-engine/data/jobs/configs/c73d86ac-f12b-4c2a-b891-3ebdd2c88987/geo_config.yaml"
+  },
+  "pid": 28910,
+  "finishedAt": "2026-07-02T12:29:07.309Z"
+}

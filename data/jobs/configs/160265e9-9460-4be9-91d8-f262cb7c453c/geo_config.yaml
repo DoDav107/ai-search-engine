@@ -1,0 +1,111 @@
+engine: live
+brand: Mini Golf
+brand_aliases:
+- Mini Golf
+- MiniGolf
+competitors: []
+geo:
+  default_provider: openai
+  default_model: gpt-5.5
+  locale:
+    country: AU
+    region: Australia
+engines:
+- provider: openai
+  model: gpt-5.5
+  enabled: true
+queries:
+- Best mini golf in Perth
+- Mini golf near Joondalup
+- Mini golf near Wanneroo
+- Glow mini golf Perth
+- Outdoor mini golf Perth
+- Best mini golf north of the river Perth
+- Fun date night activities near Joondalup
+- Things to do in Perth at night for two people
+- Best night activities near Joondalup
+- Is Wanneroo Botanic Gardens mini golf worth it?
+openai:
+  mode: live
+  model: gpt-5.5
+  max_completion_tokens: 500
+  measurement_max_completion_tokens: 2000
+  reasoning_effort: low
+  max_calls_per_run: 150
+  advisory_max_completion_tokens: 3500
+  advisory_timeout: 120
+web_search:
+  enabled: true
+  reasoning_effort: low
+  max_output_tokens: 6000
+  timeout: 180
+competitor_extraction:
+  enabled: true
+  model: gpt-4o-mini
+  max_completion_tokens: 300
+scoring:
+  visibility_weight: 0.35
+  prominence_weight: 0.2
+  sentiment_weight: 0.15
+  recommendation_weight: 0.15
+  citation_weight: 0.1
+  accuracy_weight: 0.05
+  neutral_accuracy_value: 0.5
+  accuracy_keywords: []
+  sentiment:
+    positive:
+    - recommended
+    - recommend
+    - good choice
+    - great choice
+    - leading
+    - best
+    - top
+    - trusted
+    - specialist
+    - popular
+    - reliable
+    - excellent
+    - ideal
+    - favorite
+    - favourite
+    - go-to
+    - preferred
+    - strong option
+    - industry leader
+    negative:
+    - limited
+    - unknown
+    - not well-known
+    - not well known
+    - less established
+    - lesser-known
+    - lesser known
+    - poor
+    - weak
+    - obscure
+    - unproven
+    - outdated
+    - lacking
+    - niche
+    recommend:
+    - best
+    - top
+    - leading
+    - recommended
+    - recommend
+    - top choice
+    - ideal
+    - go-to
+    - number one
+    - most popular
+client: Mini Golf
+audit_settings:
+  client: Mini Golf
+  brand: Mini Golf
+  domain: https://www.wanneroobotanicgardens.com.au/
+  geo_provider: openai
+  geo_model: gpt-5.5
+  geo_locale: AU
+  api_key_source: env
+  queries_count: 10

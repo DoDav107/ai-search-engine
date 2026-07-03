@@ -1,0 +1,110 @@
+engine: live
+brand: Chaffic
+brand_aliases:
+- Chaffic
+competitors: []
+geo:
+  default_provider: openai
+  default_model: gpt-5.5
+  locale:
+    country: AU
+    region: Australia
+engines:
+- provider: openai
+  model: gpt-5.5
+  enabled: true
+queries:
+- What are the best bubble tea shops in Australia?
+- Where can I get good bubble tea near me?
+- Best milk tea shops in Australia?
+- What are the best Asian dessert drink shops?
+- Where can I get fruit tea and milk tea?
+- Best places for bubble tea with friends?
+- What are the most popular boba tea brands in Australia?
+- Where can I get brown sugar milk tea?
+- Best tea shops for taro milk tea and fruit tea?
+- Where can I get refreshing Asian drinks near me?
+openai:
+  mode: live
+  model: gpt-5.5
+  max_completion_tokens: 500
+  measurement_max_completion_tokens: 2000
+  reasoning_effort: low
+  max_calls_per_run: 150
+  advisory_max_completion_tokens: 3500
+  advisory_timeout: 120
+web_search:
+  enabled: true
+  reasoning_effort: low
+  max_output_tokens: 6000
+  timeout: 180
+competitor_extraction:
+  enabled: true
+  model: gpt-4o-mini
+  max_completion_tokens: 300
+scoring:
+  visibility_weight: 0.35
+  prominence_weight: 0.2
+  sentiment_weight: 0.15
+  recommendation_weight: 0.15
+  citation_weight: 0.1
+  accuracy_weight: 0.05
+  neutral_accuracy_value: 0.5
+  accuracy_keywords: []
+  sentiment:
+    positive:
+    - recommended
+    - recommend
+    - good choice
+    - great choice
+    - leading
+    - best
+    - top
+    - trusted
+    - specialist
+    - popular
+    - reliable
+    - excellent
+    - ideal
+    - favorite
+    - favourite
+    - go-to
+    - preferred
+    - strong option
+    - industry leader
+    negative:
+    - limited
+    - unknown
+    - not well-known
+    - not well known
+    - less established
+    - lesser-known
+    - lesser known
+    - poor
+    - weak
+    - obscure
+    - unproven
+    - outdated
+    - lacking
+    - niche
+    recommend:
+    - best
+    - top
+    - leading
+    - recommended
+    - recommend
+    - top choice
+    - ideal
+    - go-to
+    - number one
+    - most popular
+client: Chaffic
+audit_settings:
+  client: Chaffic
+  brand: Chaffic
+  domain: https://chaffic.com.au/
+  geo_provider: openai
+  geo_model: gpt-5.5
+  geo_locale: AU
+  api_key_source: env
+  queries_count: 10

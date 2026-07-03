@@ -1,0 +1,169 @@
+{
+  "jobId": "533e8f2a-b133-4804-a8c4-7695020d3de7",
+  "status": "done",
+  "client": "Chaffic",
+  "brand": "Chaffic",
+  "domain": "https://chaffic.com.au/",
+  "queries": [
+    "What are the best bubble tea shops in Australia?",
+    "Where can I get good bubble tea near me?",
+    "Best milk tea shops in Australia?",
+    "What are the best Asian dessert drink shops?",
+    "Where can I get fruit tea and milk tea?",
+    "Best places for bubble tea with friends?",
+    "What are the most popular boba tea brands in Australia?",
+    "Where can I get brown sugar milk tea?",
+    "Best tea shops for taro milk tea and fruit tea?",
+    "Where can I get refreshing Asian drinks near me?"
+  ],
+  "geo_provider": "openai",
+  "geo_model": "gpt-5.5",
+  "api_key_source": "env",
+  "startedAt": "2026-07-02T13:45:19.704Z",
+  "updatedAt": "2026-07-02T13:52:46.062Z",
+  "events": [
+    {
+      "phase": "queued",
+      "message": "Preparing pipeline config."
+    },
+    {
+      "phase": "start",
+      "message": "Launching Python pipeline."
+    },
+    {
+      "phase": "crawl",
+      "message": "Crawling site and scoring SEO factors…"
+    },
+    {
+      "phase": "crawl_done",
+      "message": "Scored 9 page(s).",
+      "pages": 9
+    },
+    {
+      "phase": "geo_start",
+      "message": "Measuring GEO brand visibility…",
+      "total": 10
+    },
+    {
+      "phase": "geo",
+      "index": 1,
+      "total": 10,
+      "query": "What are the best bubble tea shops in Australia?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 2,
+      "total": 10,
+      "query": "Where can I get good bubble tea near me?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 3,
+      "total": 10,
+      "query": "Best milk tea shops in Australia?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 4,
+      "total": 10,
+      "query": "What are the best Asian dessert drink shops?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 5,
+      "total": 10,
+      "query": "Where can I get fruit tea and milk tea?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 6,
+      "total": 10,
+      "query": "Best places for bubble tea with friends?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 7,
+      "total": 10,
+      "query": "What are the most popular boba tea brands in Australia?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 8,
+      "total": 10,
+      "query": "Where can I get brown sugar milk tea?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 9,
+      "total": 10,
+      "query": "Best tea shops for taro milk tea and fruit tea?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 10,
+      "total": 10,
+      "query": "Where can I get refreshing Asian drinks near me?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "recommend",
+      "message": "Building recommendations and draft fixes…"
+    },
+    {
+      "phase": "saving",
+      "message": "Saving report (latest + history) and PDF…"
+    },
+    {
+      "phase": "done",
+      "message": "Audit complete.",
+      "unified_score": 37.6,
+      "seo_score": 75.2,
+      "geo_score": 0
+    }
+  ],
+  "config": {
+    "crawl": "/Users/dodav107/Desktop/Uni_Level_3/CITS3009/Eloize/ai-search-engine/data/jobs/configs/533e8f2a-b133-4804-a8c4-7695020d3de7/crawl_config.yaml",
+    "geo": "/Users/dodav107/Desktop/Uni_Level_3/CITS3009/Eloize/ai-search-engine/data/jobs/configs/533e8f2a-b133-4804-a8c4-7695020d3de7/geo_config.yaml"
+  },
+  "pid": 59616,
+  "finishedAt": "2026-07-02T13:52:46.062Z"
+}

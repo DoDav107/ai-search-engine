@@ -40,8 +40,29 @@ _MAX_CALLS = int(_cfg.get("max_calls_per_run", 5))
 _api_key = os.environ.get("OPENAI_API_KEY", "").strip()
 
 # ---------------------------------------------------------------------------
-# Client class
+# Safety net: surface a RETIRED / unknown model id clearly (staleness in the curated
+# config/models.yaml catalogue), never a silent empty/0% run.
 # ---------------------------------------------------------------------------
+def _model_availability_error(exc: Exception, model: str) -> RuntimeError | None:
+    """If ``exc`` looks like an unknown/retired model rejection, return an actionable error.
+
+    The dropdown is a curated catalogue (config/models.yaml); if a provider later retires a
+    listed api_id, the run must fail with a clear "update config" message rather than a
+    confusing generic API error or a silent zero.
+    """
+    text = str(exc).lower()
+    is_model_error = isinstance(exc, openai.NotFoundError) or (
+        isinstance(exc, openai.BadRequestError)
+        and "model" in text
+        and ("does not exist" in text or "not found" in text or "model_not_found" in text)
+    )
+    if not is_model_error:
+        return None
+    return RuntimeError(
+        f"OpenAI rejected the model id '{model}' — it may be retired or renamed. "
+        f"Update config/models.yaml with the current api_id for this model. ({exc})"
+    )
+
 
 class OpenAIClient:
     """Thin wrapper around the OpenAI chat completions API with a per-run call cap."""
@@ -123,7 +144,8 @@ class OpenAIClient:
         except openai.RateLimitError as exc:
             raise RuntimeError(f"OpenAI rate limit hit: {exc}") from exc
         except openai.OpenAIError as exc:
-            raise RuntimeError(f"OpenAI API error: {exc}") from exc
+            model_err = _model_availability_error(exc, kwargs.get("model", model or _MODEL))
+            raise (model_err or RuntimeError(f"OpenAI API error: {exc}")) from exc
 
     def respond_with_web_search(
         self,
@@ -181,7 +203,8 @@ class OpenAIClient:
         except openai.RateLimitError as exc:
             raise RuntimeError(f"OpenAI rate limit hit: {exc}") from exc
         except openai.OpenAIError as exc:
-            raise RuntimeError(f"OpenAI API error: {exc}") from exc
+            model_err = _model_availability_error(exc, kwargs.get("model", model or _MODEL))
+            raise (model_err or RuntimeError(f"OpenAI API error: {exc}")) from exc
 
         text = (getattr(response, "output_text", None) or "").strip()
         web_search_used, sources = _extract_search_metadata(response)

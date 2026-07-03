@@ -41,11 +41,9 @@ type ProviderOption = {
   ui_selectable?: boolean;
   // Whether the provider's API-key env var is configured on the server.
   key_present?: boolean;
-  // "live" (fetched from the provider) or "config" (curated fallback); note is set only
-  // when a live fetch was attempted but fell back (shown as a small non-blocking notice).
+  // Curated consumer catalogue metadata (source is always "config"; note reserved, unused).
   source?: string;
   note?: string | null;
-  live_fetch?: boolean;
   models: ProviderModel[];
 };
 type GeoOptions = {

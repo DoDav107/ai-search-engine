@@ -1,9 +1,9 @@
 """Provider/model options for the dashboards' New Audit forms.
 
-Thin wrapper over the single source of truth (``geo_agent.build_catalog`` — derived from
-geo_config.yaml's ``engines:`` list) so the forms, the config, the factory, and the
-results never drift. Adds ``key_present`` per provider (is the API-key env var set?) so a
-form can warn before a run instead of failing silently mid-pipeline.
+Thin wrapper over the single source of truth (``geo_agent.build_catalog`` — the curated
+consumer catalogue in ``config/models.yaml``) so the forms, the config, the factory, and
+the results never drift. Adds ``key_present`` per provider (is the API-key env var set?) so
+a form can warn before a run instead of failing silently mid-pipeline.
 
 The ``ui_selectable`` flag is preserved (mock is ui_selectable=False); the forms filter on
 it — this module never hardcodes mock's exclusion.
@@ -37,9 +37,8 @@ def load_geo_options(path: str = "config/geo_config.yaml") -> dict[str, Any]:
     with config_path.open("r", encoding="utf-8") as stream:
         config = yaml.safe_load(stream) or {}
 
-    # discover=True: populate each live_fetch provider's dropdown from its list-models API
-    # (filtered, newest-first, disk-cached), falling back silently to the curated catalogue.
-    catalog = build_catalog(config, discover=True)
+    # The curated consumer catalogue (config/models.yaml) — clean labels, not a live API dump.
+    catalog = build_catalog(config)
     for provider in catalog.get("providers", {}).values():
         env_key = provider.get("env_key_name")
         # No env var (mock) needs no key; otherwise report whether it's configured.

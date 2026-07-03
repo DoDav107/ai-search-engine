@@ -17,6 +17,8 @@ from ..engine.models import GeoQueryResult, GeoReport
 
 logger = logging.getLogger(__name__)
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
 
 # Which providers can ground answers in live web search. Where True, grounding is
 # MANDATORY — a search-capable client must attach its search tool or fail loudly,
@@ -70,41 +72,39 @@ UI_SELECTABLE: dict[str, bool] = {
 PROVIDER_ORDER: list[str] = ["openai", "anthropic", "google", "deepseek", "xai", "perplexity", "mock"]
 
 
+def _load_models_config() -> dict[str, Any]:
+    """Load the curated consumer catalogue (config/models.yaml). Missing/broken → {}."""
+    path = REPO_ROOT / "config" / "models.yaml"
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            return yaml.safe_load(fh) or {}
+    except FileNotFoundError:
+        return {}
+    except Exception as exc:  # noqa: BLE001 — a bad catalogue must never break the form
+        logger.warning("Could not read %s: %s", path, exc)
+        return {}
+
+
 def build_catalog(config: dict[str, Any], discover: bool = False) -> dict[str, Any]:
     """Single source of truth for the provider→models catalog used by BOTH dashboards.
 
-    The provider SET comes from ``config['engines']`` (incl. mock). Per-provider model
-    lists come from ``config/models.yaml`` (the curated catalogue) resolved through
-    :mod:`src.agents.model_discovery`:
+    Model lists are the CURATED CONSUMER catalogue in ``config/models.yaml`` — the models a
+    real user recognises in ChatGPT / Gemini / Claude, NOT the raw provider ``/models`` API
+    dump (no dated snapshots, codex, nano, embeddings). Each catalogue entry maps a consumer
+    ``label`` to the real ``api_id`` we call under the hood, plus a ``grounding`` flag; the
+    dropdown renders the label and submits the api_id. Adding/updating a model is a one-line
+    edit to config/models.yaml (no code change) — see the header comment in that file.
 
-    * ``discover=True`` (the New Audit forms, via ``geo_options``/the Next route) —
-      for a provider with ``live_fetch: true`` and a configured API key, the dropdown is
-      populated LIVE from the provider's list-models API (filtered to GEO-usable chat
-      models, newest first, disk-cached). On any failure it falls back silently to the
-      curated list and carries a ``note``. Live-discovered models not in the config's
-      ``grounding_verified`` are labelled "(unverified for GEO)".
-    * ``discover=False`` (runtime resolution, CLI) — pure config; no network. The per-
-      engine ``enabled`` flag is intentionally ignored: it gates a batch run, not the pick
-      list. Provider metadata (label, env var, ui_selectable, grounding) comes from the
-      maps above; mock is ``ui_selectable=False`` so it stays runnable from config/CLI
-      while the forms filter it out.
+    The provider SET is the union of the catalogue and ``config['engines']`` (so mock stays
+    available for config/CLI with ``ui_selectable=False``; the forms filter it out). A model
+    whose grounding is false (or whose provider can't web-search at all) is labelled
+    "(no GEO grounding)". Each provider's models are ordered flagship-first (``default: true``)
+    so both forms pre-select the flagship. ``discover`` is accepted for backward compatibility
+    and ignored — this catalogue is curated config, never a live fetch.
 
     Returns ``{default_provider, default_model, providers}`` where each provider carries
-    ``{label, env_key_name, ui_selectable, web_grounded, live_fetch, source, note,
-    models:[{id,label,grounding}]}``. Defaults always land on a UI-selectable provider.
-
-    Model strings are CONFIG — verify each against the provider's current models page:
-      OpenAI     https://platform.openai.com/docs/models
-      Anthropic  https://docs.anthropic.com/en/docs/about-claude/models
-      Google     https://ai.google.dev/gemini-api/docs/models
-      DeepSeek   https://api-docs.deepseek.com
-      xAI        https://docs.x.ai/docs/models
-      Perplexity https://docs.perplexity.ai/getting-started/models
+    ``{label, env_key_name, ui_selectable, web_grounded, source, note, models:[{id,label,grounding}]}``.
     """
-    import os
-
-    from .model_discovery import cache_ttl_seconds, load_models_config, resolve_models
-
     by_provider: dict[str, list[str]] = {}
     engines = config.get("engines")
     if isinstance(engines, list):
@@ -119,45 +119,56 @@ def build_catalog(config: dict[str, Any], discover: bool = False) -> dict[str, A
             if model not in models:
                 models.append(model)
 
-    models_config = load_models_config()
+    models_config = _load_models_config()
     mcfg_providers = models_config.get("providers") if isinstance(models_config.get("providers"), dict) else {}
-    ttl_seconds = cache_ttl_seconds(models_config)
 
-    # models.yaml may name a provider the engines list doesn't (pure pick-list entry).
-    all_provider_ids = list(by_provider) + [p for p in mcfg_providers if p not in by_provider]
+    # Provider set = catalogue ∪ engines (the latter keeps mock available for config/CLI).
+    all_provider_ids = list(mcfg_providers) + [p for p in by_provider if p not in mcfg_providers]
     ordered = [p for p in PROVIDER_ORDER if p in all_provider_ids]
     ordered += [p for p in all_provider_ids if p not in ordered]
 
     providers: dict[str, Any] = {}
     for provider in ordered:
         pcfg = mcfg_providers.get(provider) if isinstance(mcfg_providers.get(provider), dict) else {}
-        env_var = PROVIDER_ENV_VAR.get(provider)
-        api_key = (os.environ.get(env_var, "").strip() or None) if env_var else None
-        model_ids, source, note = resolve_models(
-            provider, pcfg, discover=discover,
-            fallback_ids=by_provider.get(provider, []),
-            ttl_seconds=ttl_seconds, api_key=api_key,
-        )
-        grounding_verified = {str(m) for m in (pcfg.get("grounding_verified") or [])}
         prov_grounded = SUPPORTS_WEB_SEARCH.get(provider, False)
+        entries = pcfg.get("models") if isinstance(pcfg.get("models"), list) else None
+
         models_list: list[dict[str, str]] = []
-        for mid in model_ids:
-            if prov_grounded:
-                grounding = "verified" if mid in grounding_verified else "unverified"
-                suffix = "" if grounding == "verified" else "  (unverified for GEO)"
-            else:
-                grounding = "n/a"  # provider can't ground → grounding tag is meaningless
-                suffix = ""
-            models_list.append({"id": mid, "label": f"{mid}{suffix}", "grounding": grounding})
+        default_api_id = ""
+        if entries:  # curated consumer catalogue
+            for e in entries:
+                if not isinstance(e, dict):
+                    continue
+                api_id = str(e.get("api_id") or e.get("id") or "").strip()
+                if not api_id:
+                    continue
+                label = str(e.get("label") or api_id).strip()
+                # Effective grounding: the provider must support web search AND the model.
+                grounded = prov_grounded and bool(e.get("grounding", True))
+                if not grounded:
+                    label = f"{label}  (no GEO grounding)"
+                models_list.append({"id": api_id, "label": label,
+                                    "grounding": "yes" if grounded else "no"})
+                if e.get("default") and not default_api_id:
+                    default_api_id = api_id
+        else:  # provider not in the catalogue (e.g. mock) — engine-derived ids, plain labels
+            for mid in by_provider.get(provider, []):
+                models_list.append({"id": mid, "label": mid,
+                                    "grounding": "yes" if prov_grounded else "no"})
+
+        # Order flagship-first so both forms pre-select the default without extra logic.
+        if default_api_id:
+            models_list.sort(key=lambda m: 0 if m["id"] == default_api_id else 1)
+        elif models_list:
+            default_api_id = models_list[0]["id"]
 
         providers[provider] = {
             "label": PROVIDER_LABELS.get(provider, provider),
-            "env_key_name": env_var,  # None for mock
+            "env_key_name": PROVIDER_ENV_VAR.get(provider),  # None for mock
             "ui_selectable": UI_SELECTABLE.get(provider, True),
             "web_grounded": prov_grounded,
-            "live_fetch": bool(pcfg.get("live_fetch", False)),
-            "source": source,          # "live" | "config"
-            "note": note,              # set only when a live fetch fell back
+            "source": "config",  # curated catalogue (never a live API dump)
+            "note": None,
             "models": models_list,
         }
 
@@ -166,16 +177,9 @@ def build_catalog(config: dict[str, Any], discover: bool = False) -> dict[str, A
     default_provider = str(models_config.get("default_provider") or geo.get("default_provider") or "").strip().lower()
     if default_provider not in selectable:
         default_provider = selectable[0] if selectable else (ordered[0] if ordered else "")
-    default_provider_cfg = mcfg_providers.get(default_provider) if isinstance(mcfg_providers.get(default_provider), dict) else {}
+    # Flagship of the default provider (models are already flagship-first).
     default_model_ids = [m["id"] for m in providers.get(default_provider, {}).get("models", [])]
-    default_model = str(
-        default_provider_cfg.get("default_model")
-        or models_config.get("default_model")
-        or geo.get("default_model")
-        or ""
-    ).strip()
-    if default_model not in default_model_ids:
-        default_model = default_model_ids[0] if default_model_ids else ""
+    default_model = default_model_ids[0] if default_model_ids else ""
 
     return {
         "default_provider": default_provider,

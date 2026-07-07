@@ -16,7 +16,9 @@ Three layers, each independently runnable:
 
 ## 1. Setup
 
-**Python 3.13+ required.**
+Follow these four steps in order on a fresh clone. **Python 3.13+ and Node.js are required** (install Node from [nodejs.org](https://nodejs.org) if you don't have it).
+
+### Step 1 — Python environment
 
 ```bash
 python3 -m venv .venv
@@ -24,24 +26,56 @@ source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-**API key (optional for live GEO/drafting):**
+> ⚠️ You must **activate** the venv in **every new terminal** (your prompt should show `(.venv)`), or Python commands fail with **`No module named streamlit`**. Re-run `source .venv/bin/activate` to fix it.
+
+### Step 2 — Next.js dashboard dependencies
+
+Required before `make all`/`make web`, or the Next.js dashboard fails with **`next: command not found`**.
 
 ```bash
-cp .env.example .env
-# Edit .env and fill in ANTHROPIC_API_KEY or OPENAI_API_KEY
+cd web-dashboard
+npm install
+cd ..
 ```
 
-The key is only needed if you switch `engine` in `config/geo_config.yaml` from `"mock"` to `"anthropic"` or `"openai"`. All other functionality — crawling, SEO scoring, recommendations, dashboard — runs without it. The `.env` file is gitignored; never commit it.
+> `node_modules/` is **not** committed, so this must be run **once on every fresh clone**. It needs Node.js installed.
 
-**Saving keys from the dashboard (`ALLOW_ENV_KEY_WRITE`, default off):** The New Audit form
-can optionally write a provider key into the server `.env` ("Save this key to the server
-for future audits"). This is **disabled by default** and only appears/works when
-`ALLOW_ENV_KEY_WRITE=true` is set in the server `.env`. It is intended for **local/trusted,
-single-user use only** — it persists a secret to disk. **Keep it disabled on any public or
-multi-user/hosted deployment.** The write happens server-side only (`src/reporting/env_key.py`);
-the key is sent over a dedicated route on stdin and is never echoed back to the browser,
-never logged, and never stored in reports or per-job configs. A server/pipeline restart may
-be needed for a freshly saved key to take effect.
+### Step 3 — API key (`.env` at repo root)
+
+- Create a file named **`.env`** in the project root. It is **gitignored — never commit it**.
+- Add your key:
+
+  ```bash
+  OPENAI_API_KEY=sk-...
+  ```
+
+  Other providers use their own variable if you pick them in the audit form: `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `XAI_API_KEY`, `PERPLEXITY_API_KEY`, `DEEPSEEK_API_KEY`.
+- **Without a key, SEO still works fully**, but live GEO and draft fixes will show **0% / no answers**. The tool surfaces a clear "no key / call failed" message rather than failing silently — the fix is to add a valid key with available billing credit.
+- 🔒 Keep `.env` private. If a key is ever exposed (screenshot, shared file, commit), **rotate it immediately** in the provider's dashboard.
+
+### Step 4 — Run everything
+
+```bash
+make all      # Streamlit → http://localhost:8501 , Next.js → http://localhost:3000
+```
+
+`Ctrl-C` stops both. (`make install` can run the Step 1–2 dependency installs for you in one go.)
+
+### Troubleshooting
+
+| Symptom | Cause & fix |
+|---|---|
+| **`No module named streamlit`** | venv not activated → run `source .venv/bin/activate` (prompt shows `(.venv)`). |
+| **`next: command not found`** | Next.js deps missing → `cd web-dashboard && npm install`. |
+| **GEO shows 0% / "no live answers"** | Missing/invalid API key, **or** the account is out of billing credit (`429 insufficient_quota`). Add a valid key in `.env` and ensure the account has credit. |
+
+### Optional: saving keys from the form (`ALLOW_ENV_KEY_WRITE`, default OFF)
+
+The New Audit form can optionally write a provider key into the server `.env` ("Save this key… for future audits"). This is an **optional, local-only convenience** that persists a secret to disk.
+
+- It is **OFF by default**. Set `ALLOW_ENV_KEY_WRITE=1` in `.env` **only on a trusted local machine** if you want the feature (accepted truthy values: `1`, `true`, `yes`, `on`).
+- **Leave it unset (or `=0`) for any shared, hosted, or handover deployment.** It is force-disabled whenever `HOSTED=1` is set. **Never commit `.env` with `ALLOW_ENV_KEY_WRITE=1`.**
+- The write is server-side only (`src/security/env_writer.py`); the key is sent over a dedicated route, never echoed to the browser, never logged, and never stored in reports or per-job configs. A restart may be needed for a freshly saved key to take effect.
 
 ---
 

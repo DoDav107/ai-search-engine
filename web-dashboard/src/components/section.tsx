@@ -20,14 +20,17 @@ type Props = {
   children: ReactNode;
 };
 
-// Section shell with a staggered scroll-in entrance (matches the 2A hero animations).
+// Section shell with a staggered entrance. Animates on MOUNT (not whileInView): a section
+// living inside an initially-hidden tab panel and below the fold would never satisfy the
+// IntersectionObserver, leaving it stuck at opacity:0 — this is what made the SEO/GEO
+// Recommendations blocks render blank. Mount animation always settles at opacity:1, so the
+// section is visible whenever it has content (mirrors the RecCard fix in this codebase).
 export function Section({ title, subtitle, action, children }: Props) {
   const reduce = useReducedMotion();
   return (
     <motion.section
       initial={reduce ? "show" : "hidden"}
-      whileInView="show"
-      viewport={{ once: true, amount: 0.15 }}
+      animate="show"
       variants={sectionContainer}
       className="mt-12 sm:mt-16"
     >

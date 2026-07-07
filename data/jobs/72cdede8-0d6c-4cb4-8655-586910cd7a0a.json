@@ -1,0 +1,169 @@
+{
+  "jobId": "72cdede8-0d6c-4cb4-8655-586910cd7a0a",
+  "status": "done",
+  "client": "Nike",
+  "brand": "Nike",
+  "domain": "https://nike.com.au/",
+  "queries": [
+    "What are the best sports brands?",
+    "What are the most popular sportswear brands?",
+    "What are the top athletic brands in the world?",
+    "Which sports brand is best for athletes?",
+    "What are the best brands for gym clothes?",
+    "What are the best brands for running shoes?",
+    "What are the best brands for basketball shoes?",
+    "What are the best brands for soccer boots?",
+    "What are the best brands for football boots?",
+    "What are the best brands for training shoes?"
+  ],
+  "geo_provider": "openai",
+  "geo_model": "gpt-5.5",
+  "api_key_source": "env",
+  "startedAt": "2026-07-06T11:41:47.951Z",
+  "updatedAt": "2026-07-06T11:52:49.974Z",
+  "events": [
+    {
+      "phase": "queued",
+      "message": "Preparing pipeline config."
+    },
+    {
+      "phase": "start",
+      "message": "Launching Python pipeline."
+    },
+    {
+      "phase": "crawl",
+      "message": "Crawling site and scoring SEO factors…"
+    },
+    {
+      "phase": "crawl_done",
+      "message": "Scored 12 page(s).",
+      "pages": 12
+    },
+    {
+      "phase": "geo_start",
+      "message": "Measuring GEO brand visibility…",
+      "total": 10
+    },
+    {
+      "phase": "geo",
+      "index": 1,
+      "total": 10,
+      "query": "What are the best sports brands?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 2,
+      "total": 10,
+      "query": "What are the most popular sportswear brands?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 3,
+      "total": 10,
+      "query": "What are the top athletic brands in the world?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 4,
+      "total": 10,
+      "query": "Which sports brand is best for athletes?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 5,
+      "total": 10,
+      "query": "What are the best brands for gym clothes?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 6,
+      "total": 10,
+      "query": "What are the best brands for running shoes?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 7,
+      "total": 10,
+      "query": "What are the best brands for basketball shoes?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 8,
+      "total": 10,
+      "query": "What are the best brands for soccer boots?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 9,
+      "total": 10,
+      "query": "What are the best brands for football boots?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "geo",
+      "index": 10,
+      "total": 10,
+      "query": "What are the best brands for training shoes?",
+      "provider": "openai",
+      "model": "gpt-5.5",
+      "web_search_used": true,
+      "error": null
+    },
+    {
+      "phase": "recommend",
+      "message": "Building recommendations and draft fixes…"
+    },
+    {
+      "phase": "saving",
+      "message": "Saving report (latest + history) and PDF…"
+    },
+    {
+      "phase": "done",
+      "message": "Audit complete.",
+      "unified_score": 84.7,
+      "seo_score": 73.7,
+      "geo_score": 95.7
+    }
+  ],
+  "config": {
+    "crawl": "/Users/dodav107/Desktop/Uni_Level_3/CITS3009/Eloize/ai-search-engine/data/jobs/configs/72cdede8-0d6c-4cb4-8655-586910cd7a0a/crawl_config.yaml",
+    "geo": "/Users/dodav107/Desktop/Uni_Level_3/CITS3009/Eloize/ai-search-engine/data/jobs/configs/72cdede8-0d6c-4cb4-8655-586910cd7a0a/geo_config.yaml"
+  },
+  "pid": 65744,
+  "finishedAt": "2026-07-06T11:52:49.974Z"
+}

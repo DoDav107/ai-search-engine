@@ -864,6 +864,15 @@ geo_recs = combined.get("geo_recommendations") or []
 scored_pages = [p for p in pages if p.get("factors")]
 skipped_pages = [p for p in pages if not p.get("factors")]
 
+# Per-query GEO visibility rows, derived ONCE at module scope so every tab block can read
+# them regardless of which tab is active (tab blocks are gated by `if _active_tab == ...`,
+# so a value computed inside one tab isn't available to another). Empty lists are fine —
+# downstream comprehensions and the visibility guard handle a report with no GEO answers.
+measured = [r for r in geo_results if not r.get("error")]
+errored = [r for r in geo_results if r.get("error")]
+mentioned = sum(1 for r in measured if r.get("brand_mentioned"))
+visibility_pct = round(mentioned / len(measured) * 100, 1) if measured else 0.0
+
 
 # ---------------------------------------------------------------------------
 # Sidebar
@@ -1018,12 +1027,7 @@ if _active_tab == "overview":
     g2.plotly_chart(_gauge("SEO Score", seo_score), width="stretch", config={"displayModeBar": False})
     g3.plotly_chart(_gauge("GEO Score", geo_score), width="stretch", config={"displayModeBar": False})
 
-    # Quick-glance glass cards
-    measured = [r for r in geo_results if not r.get("error")]
-    errored = [r for r in geo_results if r.get("error")]
-    mentioned = sum(1 for r in measured if r.get("brand_mentioned"))
-    visibility_pct = round(mentioned / len(measured) * 100, 1) if measured else 0.0
-
+    # Quick-glance glass cards (measured/errored/mentioned/visibility_pct are module-scope).
     st.markdown(
         f"""
         <div class="metric-grid">
@@ -1797,57 +1801,57 @@ if _active_tab == "geo":
         st.info("No GEO query results are stored in this report yet — run **New Audit** from the sidebar.")
 
 
-    # ---------------------------------------------------------------------------
-    # Recommendations
-    # ---------------------------------------------------------------------------
-    def _render_recs(recs: list[dict], key_prefix: str) -> None:
-        if not recs:
-            st.info("No recommendations are stored in this report yet — run **New Audit** from the sidebar.")
-            return
+# ---------------------------------------------------------------------------
+# Recommendations
+# ---------------------------------------------------------------------------
+def _render_recs(recs: list[dict], key_prefix: str) -> None:
+    if not recs:
+        st.info("No recommendations are stored in this report yet — run **New Audit** from the sidebar.")
+        return
 
-        fc1, fc2 = st.columns([1, 1])
-        pr_filter = fc1.selectbox(
-            "Priority", ["All", "High", "Medium", "Low"], key=f"{key_prefix}_rec_pri"
-        )
-        sort_mode = fc2.selectbox(
-            "Sort", ["Priority (High→Low)", "Title A–Z"], key=f"{key_prefix}_rec_sort"
-        )
+    fc1, fc2 = st.columns([1, 1])
+    pr_filter = fc1.selectbox(
+        "Priority", ["All", "High", "Medium", "Low"], key=f"{key_prefix}_rec_pri"
+    )
+    sort_mode = fc2.selectbox(
+        "Sort", ["Priority (High→Low)", "Title A–Z"], key=f"{key_prefix}_rec_sort"
+    )
 
-        items = list(recs)
-        if pr_filter != "All":
-            items = [r for r in items if r.get("priority") == pr_filter]
-        if sort_mode == "Priority (High→Low)":
-            items.sort(key=lambda r: _PRIORITY_RANK.get(r.get("priority", ""), 1))
-        else:
-            items.sort(key=lambda r: (r.get("title") or "").lower())
+    items = list(recs)
+    if pr_filter != "All":
+        items = [r for r in items if r.get("priority") == pr_filter]
+    if sort_mode == "Priority (High→Low)":
+        items.sort(key=lambda r: _PRIORITY_RANK.get(r.get("priority", ""), 1))
+    else:
+        items.sort(key=lambda r: (r.get("title") or "").lower())
 
-        if not items:
-            st.caption("No recommendations match the current filters.")
-            return
+    if not items:
+        st.caption("No recommendations match the current filters.")
+        return
 
-        for i, r in enumerate(items):
-            pr = r.get("priority", "—")
-            color = _PRIORITY_COLOR.get(pr, "#64748b")
-            draft = (r.get("draft") or "").strip()
-            with st.container(border=True):
-                h1, h2 = st.columns([0.82, 0.18], vertical_alignment="center")
-                h1.markdown(f"#### {r.get('title', 'Untitled')}")
-                h2.markdown(
-                    f"<div style='text-align:right'>{_badge_html(str(pr).upper(), color)}</div>",
-                    unsafe_allow_html=True,
-                )
-                if r.get("scope"):
-                    st.caption(str(r.get("scope")))
-                st.markdown("**Issue**")
-                st.write(r.get("issue") or "No issue text stored for this recommendation.")
-                st.markdown("**Why it matters**")
-                st.write(r.get("why_it_matters") or "No rationale stored for this recommendation.")
-                st.markdown("**Recommendation**")
-                st.write(r.get("recommendation") or "No recommendation text stored for this item.")
-                if draft:
-                    with st.expander("Draft fix"):
-                        _render_draft(draft)
-                        _copy_button(draft, key=f"{key_prefix}_{i}")
+    for i, r in enumerate(items):
+        pr = r.get("priority", "—")
+        color = _PRIORITY_COLOR.get(pr, "#64748b")
+        draft = (r.get("draft") or "").strip()
+        with st.container(border=True):
+            h1, h2 = st.columns([0.82, 0.18], vertical_alignment="center")
+            h1.markdown(f"#### {r.get('title', 'Untitled')}")
+            h2.markdown(
+                f"<div style='text-align:right'>{_badge_html(str(pr).upper(), color)}</div>",
+                unsafe_allow_html=True,
+            )
+            if r.get("scope"):
+                st.caption(str(r.get("scope")))
+            st.markdown("**Issue**")
+            st.write(r.get("issue") or "No issue text stored for this recommendation.")
+            st.markdown("**Why it matters**")
+            st.write(r.get("why_it_matters") or "No rationale stored for this recommendation.")
+            st.markdown("**Recommendation**")
+            st.write(r.get("recommendation") or "No recommendation text stored for this item.")
+            if draft:
+                with st.expander("Draft fix"):
+                    _render_draft(draft)
+                    _copy_button(draft, key=f"{key_prefix}_{i}")
 
 
 if _active_tab == "seo":

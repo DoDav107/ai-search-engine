@@ -61,14 +61,19 @@ export function TabsTrigger({ value, children }: { value: string; children: Reac
   );
 }
 
-// Panels stay MOUNTED (only hidden via CSS when inactive) so switching tabs never
-// refetches or resets child state (e.g. the Trends client/date-range selection).
+// Panels stay MOUNTED (so switching tabs never refetches or resets child state, e.g. the
+// Trends client/date-range selection). Inactive panels are hidden with an INLINE
+// display:none — the most authoritative hide: it wins the cascade over any class/stylesheet
+// AND is immune to descendant animations. Sections animate to opacity:1 on mount (the
+// blank-body fix), which must NOT leak them into an inactive tab; display:none on the panel
+// guarantees only the ACTIVE tab's sections are ever shown. `hidden` also drops the inactive
+// panel from the accessibility tree.
 export function TabsContent({ value, children }: { value: string; children: ReactNode }) {
   const ctx = useContext(Ctx);
   if (!ctx) throw new Error("TabsContent must be used within <Tabs>");
   const active = ctx.value === value;
   return (
-    <div role="tabpanel" hidden={!active} className={active ? "" : "hidden"}>
+    <div role="tabpanel" hidden={!active} style={active ? undefined : { display: "none" }}>
       {children}
     </div>
   );

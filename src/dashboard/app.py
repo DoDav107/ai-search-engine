@@ -970,11 +970,22 @@ combined_recs = [{**r, "_area": r.get("area") or "SEO"} for r in seo_recs] + [
 ]
 top_actions = sorted(combined_recs, key=_rec_sort_key)[:5]
 
-_tab_overview, _tab_seo, _tab_geo, _tab_trends = st.tabs(
-    ["📋 Overview", "🔍 SEO", "🤖 GEO", "📈 Trends"]
+# Top-level report tabs. st.tabs() does NOT persist the selected tab across Streamlit's
+# per-interaction re-runs, so changing a widget inside a tab (e.g. the Trends client) reset
+# the view to the first tab. A keyed st.radio stores the choice in st.session_state and
+# restores it on every re-run, so the user stays on the tab they're working in. Only the
+# selected tab's blocks render (see the `if _active_tab == ...` guards below).
+_TAB_LABELS = {"overview": "📋 Overview", "seo": "🔍 SEO", "geo": "🤖 GEO", "trends": "📈 Trends"}
+_active_tab = st.radio(
+    "Report section",
+    options=list(_TAB_LABELS.keys()),
+    format_func=lambda k: _TAB_LABELS[k],
+    horizontal=True,
+    key="active_tab",
+    label_visibility="collapsed",
 )
 
-with _tab_overview:
+if _active_tab == "overview":
     st.markdown("## 🎯 Top Priority Actions")
     if top_actions:
         cards = []
@@ -1000,7 +1011,7 @@ with _tab_overview:
 # ---------------------------------------------------------------------------
 # Overall scores — gauges + glass cards
 # ---------------------------------------------------------------------------
-with _tab_overview:
+if _active_tab == "overview":
     st.markdown("## Overall Scores")
     g1, g2, g3 = st.columns(3)
     g1.plotly_chart(_gauge("Unified Score", unified), width="stretch", config={"displayModeBar": False})
@@ -1302,14 +1313,14 @@ def _render_trends(default_brand: str) -> None:
             )
 
 
-with _tab_trends:
+if _active_tab == "trends":
     _render_trends(brand)
 
 
 # ---------------------------------------------------------------------------
 # SEO Breakdown
 # ---------------------------------------------------------------------------
-with _tab_seo:
+if _active_tab == "seo":
     st.markdown("## 🔍 SEO Breakdown")
 
     # AI-generated SEO assessment — same callout treatment as the GEO assessment.
@@ -1437,7 +1448,7 @@ with _tab_seo:
 # ---------------------------------------------------------------------------
 # GEO Report
 # ---------------------------------------------------------------------------
-with _tab_geo:
+if _active_tab == "geo":
     st.markdown("## 🤖 GEO Report")
     audit_settings = combined.get("audit_settings") or {}
     if audit_settings.get("geo_provider") or audit_settings.get("geo_model"):
@@ -1839,11 +1850,11 @@ with _tab_geo:
                         _copy_button(draft, key=f"{key_prefix}_{i}")
 
 
-with _tab_seo:
+if _active_tab == "seo":
     st.markdown("## 🛠 SEO Recommendations")
     _render_recs(seo_recs, "seo")
 
-with _tab_geo:
+if _active_tab == "geo":
     st.markdown("## 🛠 GEO Recommendations")
     geo_assessment = (combined.get("geo_assessment") or "").strip()
     if geo_assessment:
